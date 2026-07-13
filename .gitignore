@@ -1,0 +1,59 @@
+# ============ Go ============
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+backend/bin/
+backend/tmp/
+# Go 工作区文件（如果用 workspace 模式才产生）
+go.work
+go.work.sum
+
+# ============ Node / 前端 ============
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ============ 环境变量 / 密钥（绝不提交）============
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+*.key
+*.pem
+
+# ============ 编辑器 / IDE ============
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ============ Go land / 其他 ============
+*.iml
+
+# ============ 数据库本地文件（如果用 SQLite）============
+backend/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ============ 构建产物 / 缓存 ============
+*.pid
+*.seed
+.coverage
+coverage.out
+vendor/
