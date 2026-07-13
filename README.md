@@ -51,7 +51,7 @@ trend-graph/
 详见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
 - [x] 阶段 0：项目骨架 + 环境准备
-- [ ] 阶段 1：HackerNews 单源抓取 + Gin 第一个 API
+- [x] 阶段 1：HackerNews 单源抓取 + Gin 第一个 API
 - [ ] 阶段 2：数据库设计（GORM + PostgreSQL）
 - [ ] 阶段 3：接入 DeepSeek（查询扩展 + 摘要）
 - [ ] 阶段 4：React 前端骨架 + 热点列表页
