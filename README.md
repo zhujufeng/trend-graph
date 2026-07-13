@@ -56,7 +56,7 @@ trend-graph/
 - [x] 阶段 3：接入 DeepSeek（查询扩展 + 摘要）
 - [x] 阶段 4：React 前端骨架 + 热点列表页
 - [x] 阶段 5：扩展其余 8 个信息源
-- [ ] 阶段 6：WebSocket 实时推送
+- [x] 阶段 6：WebSocket 实时推送
 - [ ] 阶段 7：定时任务 + 多渠道通知
 - [ ] 阶段 8：🎯 关联图谱差异化亮点
 - [ ] 阶段 9：Docker Compose 部署上 VPS
