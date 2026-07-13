@@ -18,6 +18,9 @@ import { RefreshCw, Plus, Loader2, Sparkles, AlertCircle } from 'lucide-react'
 
 // 我们自己写的 API 客户端和类型
 import { listHots, listSources, triggerCrawl, expandKeyword, getHot, analyzeHot } from '../api'
+// 阶段 6：用 WebSocket Hook 接收实时推送
+import { useWebSocket } from '../hooks/useWebSocket'
+import type { WSMessage } from '../hooks/useWebSocket'
 import type { HotItem, ListParams } from '../types'
 import { HotCard } from '../components/HotCard'
 
@@ -92,6 +95,70 @@ export function HotListPage() {
     fetchList()
   }, [fetchList])
 
+  // ====== 阶段 6：WebSocket 实时推送 ======
+  // 监听后端的 WS 推送：
+  //   - crawl_done: 后端抓取完成 → 自动刷新列表
+  //   - analyze_done: 单条 AI 分析完成 → 就地更新该条
+  //   - hot_new: 单条新热点入库 → prepend 到列表头部
+  //
+  // 这里用 useCallback 包 onMessage，保证依赖最小（只有 setItems/setError 是稳定的）
+  const handleWSMessage = useCallback(
+    (msg: WSMessage) => {
+      switch (msg.type) {
+        case 'crawl_done': {
+          // 后端通知一批抓取完成，自动刷新
+          fetchList()
+          break
+        }
+        case 'analyze_done': {
+          // 后端通知某条已分析完成，更新这条
+          const data = msg.data as {
+            id: number
+            title: string
+            summary: string
+            relevance: number
+            isAuthentic: boolean
+            entities: string[]
+          }
+          setItems((prev) =>
+            prev.map((it) =>
+              it.id === data.id
+                ? {
+                    ...it,
+                    summary: data.summary,
+                    relevance: data.relevance,
+                    isAuthentic: data.isAuthentic,
+                    entities: JSON.stringify(data.entities),
+                  }
+                : it,
+            ),
+          )
+          break
+        }
+        case 'hot_new': {
+          // 新热点入库，prepend 到列表头
+          const data = msg.data as HotItem
+          setItems((prev) => {
+            // 防重复
+            if (prev.some((it) => it.id === data.id)) return prev
+            return [data, ...prev]
+          })
+          setTotal((t) => t + 1)
+          break
+        }
+      }
+    },
+    [fetchList],
+  )
+
+  // WS 连接，URL 用相对路径让 Vite 代理或 nginx 转发都行
+  // 注意：开发时 Vite 不会自动转 ws://，所以我们直接拼当前 host
+  const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
+  const { connected: wsConnected, reconnectCount } = useWebSocket({
+    url: wsUrl,
+    onMessage: handleWSMessage,
+  })
+
   // ====== 事件处理 ======
 
   // 点击"立即抓取"按钮
@@ -161,6 +228,26 @@ export function HotListPage() {
             </h1>
             <span className="text-xs text-text-muted ml-2 hidden sm:inline">
               AI 热点监控 + 关联图谱
+            </span>
+            {/* 阶段 6：WebSocket 连接状态指示灯 */}
+            <span
+              className={`flex items-center gap-1 text-xs ml-auto ${
+                wsConnected ? 'text-emerald-400' : reconnectCount > 0 ? 'text-orange-400' : 'text-text-muted'
+              }`}
+              title={
+                wsConnected
+                  ? 'WebSocket 已连接，新热点将自动推送'
+                  : reconnectCount > 0
+                    ? `连接中... (重试 ${reconnectCount} 次)`
+                    : 'WebSocket 未连接'
+              }
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  wsConnected ? 'bg-emerald-400 animate-pulse' : 'bg-orange-400'
+                }`}
+              />
+              {wsConnected ? '实时' : reconnectCount > 0 ? `重连${reconnectCount}` : '离线'}
             </span>
           </div>
 

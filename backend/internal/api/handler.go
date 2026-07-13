@@ -24,6 +24,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"trend-graph/internal/analyzer"
+	"trend-graph/internal/notify"
 	"trend-graph/internal/store"
 	"trend-graph/internal/types"
 )
@@ -33,17 +34,20 @@ type Handler struct {
 	crawlers map[string]types.Crawler
 	hotRepo  *store.HotItemRepo
 	analyzer *analyzer.Analyzer
+	// wsHub 用于实时推送（阶段 6 新增）
+	wsHub *notify.WebSocketHub
 }
 
 // NewHandler 构造函数（参数继续扩展）
 //
 // 注意可选依赖：analyzer 可以为 nil，没有配置 AI 时仍能跑基础抓取。
-func NewHandler(hotRepo *store.HotItemRepo, an *analyzer.Analyzer, crawlers ...types.Crawler) *Handler {
+// wsHub 阶段 6 必需（为支持实时推送），但允许 nil 以便早期单元测试。
+func NewHandler(hotRepo *store.HotItemRepo, an *analyzer.Analyzer, wsHub *notify.WebSocketHub, crawlers ...types.Crawler) *Handler {
 	m := make(map[string]types.Crawler, len(crawlers))
 	for _, c := range crawlers {
 		m[c.Source()] = c
 	}
-	return &Handler{crawlers: m, hotRepo: hotRepo, analyzer: an}
+	return &Handler{crawlers: m, hotRepo: hotRepo, analyzer: an, wsHub: wsHub}
 }
 
 // Register 路由注册
@@ -219,12 +223,12 @@ func (h *Handler) TriggerCrawl(c *gin.Context) {
 
 	// 4. 可选 AI 分析
 	//    analyze=true 且 analyzer 已配置才会执行
+	//    每分析完一条就通过 WS 广播，前端能逐条冒出
 	analyzed := 0
 	if analyze && h.analyzer != nil {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Minute)
 		defer cancel()
 		for i := range dbItems {
-			// 这里直接复用 dbItems，每分析一条就更新一条
 			res, err := h.analyzer.AnalyzeHot(ctx, keyword, items[i])
 			if err != nil {
 				continue
@@ -237,10 +241,34 @@ func (h *Handler) TriggerCrawl(c *gin.Context) {
 			dbItems[i].IsAuthentic = &res.IsAuthentic
 			dbItems[i].Entities = string(entitiesJSON)
 			analyzed++
+
+			// 阶段 6：单条分析完成 → WS 推给前端
+			if h.wsHub != nil {
+				_ = h.wsHub.SendAnalyzeDone(gin.H{
+					"id":          dbItems[i].ID,
+					"title":       dbItems[i].Title,
+					"summary":     res.Summary,
+					"relevance":   res.Relevance,
+					"isAuthentic": res.IsAuthentic,
+					"entities":    res.Entities,
+				})
+			}
 		}
 	}
 
-	// 5. 返回
+	// 5. 阶段 6：抓取完成 → WS 广播给所有在线客户端
+	//    前端监听到这个事件会自动刷新列表
+	if h.wsHub != nil {
+		_ = h.wsHub.SendCrawlDone(gin.H{
+			"source":   source,
+			"keyword":  keyword,
+			"fetched":  len(items),
+			"inserted": inserted,
+			"analyzed": analyzed,
+		})
+	}
+
+	// 6. 返回 HTTP 响应
 	c.JSON(http.StatusOK, gin.H{
 		"data": dbItems,
 		"meta": gin.H{

@@ -36,6 +36,13 @@ export default defineConfig({
         // 修改 origin header 为 target，避免后端 CORS 校验失败
         changeOrigin: true,
       },
+      // WebSocket 代理：/ws 转发到后端
+      // ws: true 让 Vite 处理 WebSocket 协议升级
+      '/ws': {
+        target: 'ws://localhost:8080',
+        ws: true,
+        changeOrigin: true,
+      },
     },
   },
 })
