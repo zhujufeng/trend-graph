@@ -1,0 +1,73 @@
+/* 
+ * TailwindCSS v4 全局样式入口。
+ *
+ * v4 不再需要 tailwind.config.js，所有配置在 CSS 里写。
+ * 用 @import "tailwindcss" 一行引入所有工具类。
+ *
+ * 等价于 v3 的 @tailwind base / components / utilities 三件套。
+ */
+@import "tailwindcss";
+
+/* ====== 自定义设计 token（深色科技风） ====== */
+@theme {
+  /* 主色调：深色背景 + 青蓝高亮，整体偏 cyberpunk 风格 */
+  --color-base-bg: #0a0e1a;          /* 主背景：近黑深蓝 */
+  --color-surface: #131826;         /* 卡片背景 */
+  --color-surface-hover: #1a2033;   /* 卡片悬浮背景 */
+  --color-border: #1f2937;          /* 边框色 */
+  --color-accent: #06b6d4;           /* 强调色：cyan-500 */
+  --color-accent-hover: #22d3ee;    /* 强调悬浮：cyan-400 */
+  --color-text-primary: #e5e7eb;    /* 主文：gray-200 */
+  --color-text-secondary: #9ca3af;  /* 次文：gray-400 */
+  --color-text-muted: #6b7280;      /* 弱文：gray-500 */
+}
+
+/* ====== 全局基础样式 ====== */
+html, body, #root {
+  /* 撑满视口高度 */
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  /* 用主题变量定义背景和文字色 */
+  background-color: var(--color-base-bg);
+  color: var(--color-text-primary);
+  /* 用系统默认字体栈，避免外部字体加载 */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "WenQuanYi Micro Hei", sans-serif;
+  /* 字体抗锯齿 */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 暗色科技风辅助 utility */
+@layer utilities {
+  /* 给卡片加微光边框 */
+  .glow-border {
+    box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.1),
+      0 4px 20px -4px rgba(6, 182, 212, 0.05);
+  }
+  /* hover 时增强光晕 */
+  .glow-border:hover {
+    box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.25),
+      0 4px 30px -4px rgba(6, 182, 212, 0.15);
+  }
+
+  /* 渐变高亮文字（用于标题/品牌名） */
+  .text-gradient {
+    background: linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+}
+
+/* 滚动条：科技风要细黑滚动条 */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
