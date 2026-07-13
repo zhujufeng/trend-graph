@@ -1,85 +1,67 @@
 // Package api 定义 HTTP 路由和 Handler。
 //
-// Go Web 项目常见分层：
-//   cmd/server/main.go        → 程序入口，组装依赖并启动
-//   internal/api/             → 路由 + Handler（接受请求、返回 JSON）
-//   internal/crawler/         → 业务逻辑（抓取）
-//   internal/types/           → 共享数据结构
-//
-// 这种分层让 main.go 保持极简，业务改动不影响启动代码。
+// 阶段 2 改动：
+//   - Handler 多依赖一个 HotItemRepo（数据库访问）
+//   - 多依赖一个 Crawler（用来触发抓取并入库）
+//   - 路由新增:
+//       POST /api/crawl          主动触发一次抓取并入库
+//       GET  /api/hots           从数据库读（替代阶段 1 的直接调爬虫版本）
+//       GET  /api/hots/:id       取单条
 package api
 
-// 本文件依赖：
-// - net/http: 用 http.StatusOK 这种状态常量
-// - gin-gonic/gin: HTTP 框架，提供路由和 JSON 响应简写
-// - trend-graph/internal/crawler: 注入爬虫依赖
-// - trend-graph/internal/types: HotItem 类型
+// 导入同阶段 1，多了 store 包
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"trend-graph/internal/store"
 	"trend-graph/internal/types"
 )
 
 // Handler 是 API 层的"控制器"。
 //
-// 它持有所有依赖（爬虫、未来的 AI、数据库、通知器...），
-// 通过方法（如 GetHots）暴露成 Gin Handler。
-//
-// 为什么用 struct 而不是全局变量？
-// - 全局变量让测试和替换很困难
-// - struct + 依赖注入更灵活，比如阶段 5 加新爬虫只改一处
+// 阶段 2 多了两个依赖：
+//   - hotRepo: 数据库访问
+//   - 从 types.Crawler 改用 map[string]types.Crawler 不变
 type Handler struct {
-	// crawlers 是所有已注册的爬虫列表。
-	// 阶段 1 只有一个 HackerNews，阶段 5 会变成 9 个。
-	// 用 map 是为按 source 名快速查找，比如 GET /api/hots?source=hn
 	crawlers map[string]types.Crawler
+	hotRepo  *store.HotItemRepo
 }
 
-// NewHandler 构造 Handler，注入爬虫依赖。
+// NewHandler 构造函数，参数逐步扩展。
 //
-// 这里参数用可变参数 ...types.Crawler，
-// 调用方可传 1 个或多个爬虫，main.go 里会清晰看到组装过程。
-func NewHandler(crawlers ...types.Crawler) *Handler {
+// 现在传三个：crawlers、hotRepo
+// 阶段 3 之后会再加 aiClient、graphRepo...
+func NewHandler(hotRepo *store.HotItemRepo, crawlers ...types.Crawler) *Handler {
 	m := make(map[string]types.Crawler, len(crawlers))
 	for _, c := range crawlers {
 		m[c.Source()] = c
 	}
-	return &Handler{crawlers: m}
+	return &Handler{crawlers: m, hotRepo: hotRepo}
 }
 
-// Register 把所有路由挂到 Gin engine 上。
-//
-// 为什么用方法而不是直接写 init()?
-// - init() 是 Go 包级别的自动调用，时机不可控
-// - 显式 Register 让 main.go 看清楚注册了哪些路由
+// Register 路由注册
 func (h *Handler) Register(r *gin.Engine) {
-	// 路由分组：所有 API 都在 /api 前缀下
 	api := r.Group("/api")
 	{
-		// GET /api/hots 取热点列表
-		// 支持两个 query 参数:
-		//   - source: 信息源（默认 "hn"，阶段 5 改成 "all" 表示所有）
-		//   - keyword: 监控关键词（可选）
-		//   - limit: 抓取条数（默认 20）
-		api.GET("/hots", h.GetHots)
+		api.GET("/hots", h.ListHots)        // 新：从数据库读
+		api.GET("/hots/:id", h.GetHot)      // 取单条
+		api.POST("/crawl", h.TriggerCrawl)  // 手动触发一次抓取+入库
+		api.GET("/sources", h.ListSources)  // 返回所有可用源
 	}
 }
 
-// GetHots 处理 GET /api/hots。
+// TriggerCrawl POST /api/crawl?source=hn&keyword=AI&limit=20
 //
-// Gin Handler 签名固定为 func(*gin.Context)。
-// c.Query 读 query 参数，c.JSON 返回 JSON 响应。
-func (h *Handler) GetHots(c *gin.Context) {
-	// 1. 读 query 参数，给默认值
+// 主动触发一次抓取，把结果插入数据库。
+// 这是给前端"立即抓一下"按钮 / 后台定时任务调用的入口。
+func (h *Handler) TriggerCrawl(c *gin.Context) {
 	source := c.DefaultQuery("source", "hn")
-	keyword := c.Query("keyword") // 没传就是空字符串
+	keyword := c.Query("keyword")
 
-	// limit 是字符串参数，需要转成 int。
-	// strconv.Atoi 是 Go 把字符串转 int 的标准做法。
-	// 转失败就用默认值 20（不报错给用户，宽容一点）。
 	limit := 20
 	if l := c.Query("limit"); l != "" {
 		if n, err := strconv.Atoi(l); err == nil && n > 0 {
@@ -87,22 +69,18 @@ func (h *Handler) GetHots(c *gin.Context) {
 		}
 	}
 
-	// 2. 查找对应爬虫
 	crawler, ok := h.crawlers[source]
 	if !ok {
-		// source 不存在就返回 400 错误
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "unknown source",
-			"source":  source,
 			"sources": h.listSources(),
 		})
 		return
 	}
 
-	// 3. 调用爬虫抓取
+	// 1. 调爬虫
 	items, err := crawler.Fetch(keyword, limit)
 	if err != nil {
-		// 爬虫失败返回 502，类似网关错误
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error":  "fetch failed",
 			"detail": err.Error(),
@@ -110,25 +88,143 @@ func (h *Handler) GetHots(c *gin.Context) {
 		return
 	}
 
-	// 4. 成功返回标准结构
-	// 项目约定统一响应格式: { "data": ..., "meta": {...} }
-	// 写 API 时不要随意换结构，前端会依赖
+	// 2. 转成 store 模型并批量入库
+	//    注意：阶段 2 暂不绑 keywordID（设为 nil）
+	//    阶段 7 加关键词管理时改成传 keywordID
+	dbItems := make([]store.HotItem, 0, len(items))
+	for _, it := range items {
+		dbItems = append(dbItems, store.FromBiz(it, nil))
+	}
+	inserted, err := h.hotRepo.BatchCreate(dbItems)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  "db insert failed",
+			"detail": err.Error(),
+		})
+		return
+	}
+
+	// 3. 返回入库结果
 	c.JSON(http.StatusOK, gin.H{
-		"data": items,
+		"data": dbItems,
 		"meta": gin.H{
-			"source":  source,
-			"keyword": keyword,
-			"limit":   limit,
-			"count":   len(items),
+			"source":    source,
+			"keyword":   keyword,
+			"fetched":   len(items),
+			"inserted":  inserted, // 实际入库行数（受去重影响）
+			"fetchedAt": time.Now().Unix(),
 		},
 	})
 }
 
-// listSources 返回所有已注册的 source 名，便于前端做下拉框
+// ListHots GET /api/hots?source=hn&keywordId=0&since=24h&limit=20&offset=0
+//
+// 从数据库读热点列表，支持：
+//   - source: 来源过滤
+//   - keywordId: 监控关键词 ID 过滤
+//   - since: 时间范围，比如 1h / 24h / 7d，省略则不过滤
+//   - limit/offset: 分页
+func (h *Handler) ListHots(c *gin.Context) {
+	source := c.Query("source")
+
+	keywordID := int64(0)
+	if k := c.Query("keywordId"); k != "" {
+		if n, err := strconv.ParseInt(k, 10, 64); err == nil {
+			keywordID = n
+		}
+	}
+
+	// since 解析：1h / 24h / 7d / 30d
+	// Go 标准库提供 time.ParseDuration，但只支持 h/m/s 不支持 d，
+	// 所以 d（天）需要单独处理。
+	var since time.Time
+	if s := c.Query("since"); s != "" {
+		d, err := parseSince(s)
+		if err == nil {
+			since = time.Now().Add(-d)
+		}
+	}
+
+	limit := 20
+	if l := c.Query("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	offset := 0
+	if o := c.Query("offset"); o != "" {
+		if n, err := strconv.Atoi(o); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+
+	items, total, err := h.hotRepo.List(source, keywordID, since, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":  "db query failed",
+			"detail": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": items,
+		"meta": gin.H{
+			"source":    source,
+			"keywordId": keywordID,
+			"since":     c.Query("since"),
+			"limit":     limit,
+			"offset":    offset,
+			"total":     total,
+			"count":     len(items),
+		},
+	})
+}
+
+// GetHot 取单条热点
+func (h *Handler) GetHot(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	item, err := h.hotRepo.GetByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": item})
+}
+
+// ListSources 返回所有可用信息源
+func (h *Handler) ListSources(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"data":  h.listSources(),
+		"count": len(h.crawlers),
+	})
+}
+
+// listSources 内部 helper
 func (h *Handler) listSources() []string {
 	out := make([]string, 0, len(h.crawlers))
 	for name := range h.crawlers {
 		out = append(out, name)
 	}
 	return out
+}
+
+// parseSince "1h" "24h" "7d" → time.Duration
+//
+// Go 标准库 time.ParseDuration 支持 ns/µs/ms/s/m/h，
+// 不支持 d（天），所以手动处理。
+func parseSince(s string) (time.Duration, error) {
+	if len(s) > 1 && s[len(s)-1] == 'd' {
+		days, err := strconv.Atoi(s[:len(s)-1])
+		if err != nil {
+			return 0, err
+		}
+		return time.Duration(days) * 24 * time.Hour, nil
+	}
+	return time.ParseDuration(s)
 }
