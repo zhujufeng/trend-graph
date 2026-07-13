@@ -54,7 +54,7 @@ trend-graph/
 - [x] 阶段 1：HackerNews 单源抓取 + Gin 第一个 API
 - [x] 阶段 2：数据库设计（GORM + PostgreSQL）
 - [x] 阶段 3：接入 DeepSeek（查询扩展 + 摘要）
-- [ ] 阶段 4：React 前端骨架 + 热点列表页
+- [x] 阶段 4：React 前端骨架 + 热点列表页
 - [ ] 阶段 5：扩展其余 8 个信息源
 - [ ] 阶段 6：WebSocket 实时推送
 - [ ] 阶段 7：定时任务 + 多渠道通知
