@@ -109,11 +109,19 @@ func (a *Analyzer) ExpandQuery(ctx context.Context, keyword string) ([]string, e
 //
 // 这个 struct 既是 AI 输出 JSON 解析的目标，也是 store 层的字段来源。
 type AnalysisResult struct {
-	Summary     string   `json:"summary"`      // 一句话摘要
-	Relevance   float64  `json:"relevance"`    // 0~1 相关性
-	IsAuthentic bool     `json:"isAuthentic"`  // 是否可信（排除明显谣言）
-	Entities    []string `json:"entities"`     // 提取的实体（人/公司/项目/技术）
-	Reason      string  `json:"reason"`        // 判断理由（便于调试）
+	Summary     string       `json:"summary"`      // 一句话摘要
+	Relevance   float64      `json:"relevance"`    // 0~1 相关性
+	IsAuthentic bool         `json:"isAuthentic"`  // 是否可信（排除明显谣言）
+	Entities    []string     `json:"entities"`     // 兼容老结构：实体名列表
+	// 阶段 8 新增：实体带类型，用于关联图谱
+	TypedEntities []TypedEntity `json:"typedEntities"`
+	Reason      string        `json:"reason"`        // 判断理由（便于调试）
+}
+
+// TypedEntity 带类型的实体（阶段 8 关联图谱用）
+type TypedEntity struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"` // person/org/project/tech/concept/other
 }
 
 // AnalyzeHot 对一条热点做综合 AI 分析。
@@ -123,13 +131,15 @@ type AnalysisResult struct {
 //
 // 通过一次 AI 调用拿到多个分析结果，省 token 又快。
 func (a *Analyzer) AnalyzeHot(ctx context.Context, keyword string, item types.HotItem) (*AnalysisResult, error) {
+	// systemPrompt 是 DeepSeek 的系统提示词
 	systemPrompt := `你是热点内容分析助手。对一条热点做综合分析，输出 JSON。
 
 字段说明：
 - summary: 30 字以内一句话摘要
 - relevance: 0~1 浮点数，关键词相关性（0=无关，1=强相关）
 - isAuthentic: true/false，true=看起来真实可信，false=疑似夸大/谣言/标题党
-- entities: 字符串数组，提取其中的人名/公司/项目/技术名词
+- entities: 字符串数组，提取其中的人名/公司/项目/技术名词（兼容字段，与 typedEntities 一致）
+- typedEntities: 数组，每项 {"name":"...","kind":"..."}，kind 取值 person/org/project/tech/concept/other
 - reason: 50 字以内，说明你判断的依据
 
 只返回 JSON，不要其他文本。`
@@ -187,6 +197,13 @@ func (a *Analyzer) AnalyzeHot(ctx context.Context, keyword string, item types.Ho
 	}
 	if res.Entities == nil {
 		res.Entities = []string{}
+	}
+	// 阶段 8：如果 typedEntities 为空但 entities 有内容，自动从 entities 推类型（默认 other）
+	if len(res.TypedEntities) == 0 && len(res.Entities) > 0 {
+		res.TypedEntities = make([]TypedEntity, 0, len(res.Entities))
+		for _, n := range res.Entities {
+			res.TypedEntities = append(res.TypedEntities, TypedEntity{Name: n, Kind: "other"})
+		}
 	}
 	return &res, nil
 }

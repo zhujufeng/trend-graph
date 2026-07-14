@@ -67,6 +67,7 @@ func main() {
 	// 7. 装配 repo
 	hotRepo := store.NewHotItemRepo(db)
 	keywordRepo := store.NewKeywordRepo(db)
+	graphRepo := store.NewGraphRepo(db) // 阶段 8 新增
 
 	// 8. 装配通知渠道（阶段 7）
 	//    把 SMTP / 飞书 / 钉钉任一配置了就启用，组成 MultiChannelNotifier
@@ -88,13 +89,12 @@ func main() {
 	notifiers = append(notifiers, wsHub)
 	multiNotifier := notify.NewMultiChannelNotifier(notifiers...)
 
-	// 9. 启动调度器（阶段 7）
-	//    把爬虫/AI/通知全串起来，按 keywords 表里的间隔自动跑
-	sched := scheduler.NewScheduler(multi, hotRepo, keywordRepo, an, multiNotifier, wsHub)
+	// 9. 启动调度器（阶段 7+8）
+	sched := scheduler.NewScheduler(multi, hotRepo, keywordRepo, an, multiNotifier, wsHub, graphRepo)
 	sched.Start()
 
 	// 10. handler 装配
-	handler := api.NewHandler(hotRepo, keywordRepo, an, wsHub, append(crawlers, multi)...)
+	handler := api.NewHandler(hotRepo, keywordRepo, graphRepo, an, wsHub, append(crawlers, multi)...)
 
 	// 11. 启动 Gin
 	r := gin.Default()

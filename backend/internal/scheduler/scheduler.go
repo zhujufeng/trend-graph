@@ -34,20 +34,19 @@ import (
 
 // Scheduler 是关键词监控任务调度器
 type Scheduler struct {
-	// cron 是底层调度库实例
 	cron *cron.Cron
 
-	// 依赖
 	multiCrawler *crawler.MultiCrawler
 	hotRepo      *store.HotItemRepo
 	keywordRepo  *store.KeywordRepo
 	analyzer     *analyzer.Analyzer
 	notifier     notify.Notifier
 	wsHub        *notify.WebSocketHub
+	// 阶段 8 新增：图谱存储
+	graphRepo *store.GraphRepo
 
-	// 内部状态
-	mu       sync.Mutex
-	entries  map[int64]cron.EntryID // keywordID → cron entry
+	mu      sync.Mutex
+	entries map[int64]cron.EntryID
 }
 
 // NewScheduler 构造
@@ -58,9 +57,8 @@ func NewScheduler(
 	an *analyzer.Analyzer,
 	notifier notify.Notifier,
 	wsHub *notify.WebSocketHub,
+	graphRepo *store.GraphRepo,
 ) *Scheduler {
-	// cron.New(cron.WithSeconds()) 表示用 6 段 cron（含秒）
-	// 默认 5 段（分 时 日 月 周）更常用
 	c := cron.New()
 	return &Scheduler{
 		cron:         c,
@@ -70,6 +68,7 @@ func NewScheduler(
 		analyzer:     an,
 		notifier:     notifier,
 		wsHub:        wsHub,
+		graphRepo:    graphRepo,
 		entries:      make(map[int64]cron.EntryID),
 	}
 }
@@ -209,7 +208,6 @@ func (s *Scheduler) runKeywordJob(keywordID int64, keyword string, intervalMin i
 	}
 
 	// AI 分析（可选）
-	// 注意：字段 i 同步对应 dbItems[i] 和 bizItems[i] —— BatchCreate 后 dbItems[i].ID 被 GORM 回填
 	analyzedCount := 0
 	if s.analyzer != nil && len(dbItems) > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -221,13 +219,17 @@ func (s *Scheduler) runKeywordJob(keywordID int64, keyword string, intervalMin i
 			}
 			entitiesJSON, _ := json.Marshal(res.Entities)
 			_ = s.hotRepo.UpdateAIResult(dbItems[i].ID, res.Summary, res.Relevance, res.IsAuthentic, string(entitiesJSON))
-			// 内存中同步更新 dbItems（让下面的 shouldNotify 读到 relevance）
 			dbItems[i].Summary = res.Summary
 			dbItems[i].Relevance = &res.Relevance
 			dbItems[i].IsAuthentic = &res.IsAuthentic
 			analyzedCount++
 
-			// 通过 WS 推送"分析完成"
+			// 阶段 8：实体写入图谱
+			// 调度器有 keywordID，能建立 keyword→entity 的 tracks 边
+			if s.graphRepo != nil {
+				s.ingestEntitiesToGraph(dbItems[i].ID, &keywordID, res)
+			}
+
 			if s.wsHub != nil {
 				_ = s.wsHub.SendAnalyzeDone(map[string]interface{}{
 					"id":          dbItems[i].ID,
@@ -263,6 +265,40 @@ func (s *Scheduler) runKeywordJob(keywordID int64, keyword string, intervalMin i
 
 	log.Printf("[Scheduler] 关键词 %q 完成: 入库 %d 条, 分析 %d 条, 错误源 %d 个\n",
 		keyword, len(dbItems), analyzedCount, len(errSources))
+}
+
+// ingestEntitiesToGraph 是 scheduler 用的辅助函数（与 handler 同名同实现）
+// 让自动抓取产生的 AI 实体也进入关联图谱
+func (s *Scheduler) ingestEntitiesToGraph(hotID int64, keywordID *int64, res *analyzer.AnalysisResult) {
+	if s.graphRepo == nil {
+		return
+	}
+	entityIDs := make([]int64, 0, len(res.TypedEntities))
+	for _, te := range res.TypedEntities {
+		id, err := s.graphRepo.EnsureEntity(te.Name, te.Kind)
+		if err != nil {
+			continue
+		}
+		entityIDs = append(entityIDs, id)
+	}
+	if len(entityIDs) == 0 {
+		return
+	}
+	for _, eid := range entityIDs {
+		_ = s.graphRepo.EnsureRelation("hot", hotID, "contains", "entity", eid, &hotID)
+	}
+	if keywordID != nil {
+		_ = s.graphRepo.TrackKeywordToEntities(*keywordID, entityIDs, &hotID)
+	}
+	for i := 0; i < len(entityIDs); i++ {
+		for j := i + 1; j < len(entityIDs); j++ {
+			a, b := entityIDs[i], entityIDs[j]
+			if a > b {
+				a, b = b, a
+			}
+			_ = s.graphRepo.EnsureRelation("entity", a, "cooccur", "entity", b, &hotID)
+		}
+	}
 }
 
 // buildReport 拼简报文本

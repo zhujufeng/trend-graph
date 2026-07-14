@@ -31,4 +31,6 @@ client.interceptors.response.use(
   },
 )
 
+// 注意：响应拦截器返回 response.data，所以 client.get<T> 的 T 实际是 response.data 的类型
+// 泛型 S 用作业务期望"未拦截前 response 类型"，方便链式调用 .then(r => r.data)
 export default client

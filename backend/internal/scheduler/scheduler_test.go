@@ -60,8 +60,8 @@ func TestScheduler_RunKeywordJob(t *testing.T) {
 	)
 	hotRepo := store.NewHotItemRepo(db)
 	keywordRepo := store.NewKeywordRepo(db)
+	graphRepo := store.NewGraphRepo(db)
 	fake := &fakeNotifier{}
-	// WS Hub 启动
 	wsHub := notify.NewWebSocketHub()
 	go wsHub.Run()
 
@@ -74,7 +74,7 @@ func TestScheduler_RunKeywordJob(t *testing.T) {
 	defer db.Unscoped().Delete(&store.Keyword{}, k.ID)
 
 	// 直接调 runKeywordJob 跑一次，不通过 cron 调度
-	s := NewScheduler(mc, hotRepo, keywordRepo, an, fake, wsHub)
+	s := NewScheduler(mc, hotRepo, keywordRepo, an, fake, wsHub, graphRepo)
 	startTime := time.Now()
 	s.runKeywordJob(k.ID, "AI_ScheduleTest", 1440)
 	dur := time.Since(startTime)

@@ -33,19 +33,18 @@ import (
 type Handler struct {
 	crawlers map[string]types.Crawler
 	hotRepo  *store.HotItemRepo
-	// 阶段 7 新增：关键词管理
 	keywordRepo *store.KeywordRepo
+	// 阶段 8 新增：图谱存储
+	graphRepo *store.GraphRepo
 	analyzer    *analyzer.Analyzer
-	// wsHub 用于实时推送（阶段 6 新增）
 	wsHub *notify.WebSocketHub
 }
 
 // NewHandler 构造函数（参数继续扩展）
-//
-// 注意可选依赖：analyzer/wsHub 可以为 nil 以便早期单元测试。
 func NewHandler(
 	hotRepo *store.HotItemRepo,
 	keywordRepo *store.KeywordRepo,
+	graphRepo *store.GraphRepo,
 	an *analyzer.Analyzer,
 	wsHub *notify.WebSocketHub,
 	crawlers ...types.Crawler,
@@ -58,6 +57,7 @@ func NewHandler(
 		crawlers:    m,
 		hotRepo:     hotRepo,
 		keywordRepo: keywordRepo,
+		graphRepo:   graphRepo,
 		analyzer:    an,
 		wsHub:       wsHub,
 	}
@@ -81,6 +81,106 @@ func (h *Handler) Register(r *gin.Engine) {
 		api.POST("/keywords", h.CreateKeyword)
 		api.PATCH("/keywords/:id", h.UpdateKeyword)
 		api.DELETE("/keywords/:id", h.DeleteKeyword)
+
+		// 阶段 8 新增：关联图谱
+		api.GET("/graph", h.GetGraph)
+	}
+}
+
+// ===== 阶段 8：关联图谱 =====
+
+// GetGraph GET /api/graph?keywordId=1 或 /api/graph?keyword=AI
+//
+// 返回 GraphData: 节点 + 边，前端用 React Flow 渲染。
+func (h *Handler) GetGraph(c *gin.Context) {
+	if h.graphRepo == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "graphRepo not configured"})
+		return
+	}
+
+	// 优先用 keywordId 直接查
+	var keywordID int64
+	if k := c.Query("keywordId"); k != "" {
+		keywordID, _ = strconv.ParseInt(k, 10, 64)
+	}
+	keywordWord := c.Query("keyword")
+
+	// 没传 keywordId 就用 keyword 文本反查
+	if keywordID == 0 && keywordWord != "" {
+		kw, err := h.keywordRepo.List(false)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "query keywords failed", "detail": err.Error()})
+			return
+		}
+		for _, k := range kw {
+			if k.Word == keywordWord {
+				keywordID = k.ID
+				break
+			}
+		}
+		if keywordID == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "keyword not found", "keyword": keywordWord})
+			return
+		}
+	}
+	if keywordID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "need keywordId or keyword"})
+		return
+	}
+
+	g, err := h.graphRepo.GetGraph(keywordID, keywordWord)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "graph query failed", "detail": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": g,
+		"meta": gin.H{"keywordId": keywordID, "nodes": len(g.Nodes), "edges": len(g.Edges)},
+	})
+}
+
+// ingestEntitiesToGraph 把 AI 抽取的实体写入图谱（关键词→实体→热点三方关系）
+//
+// 这个 helper 在 TriggerCrawl 和 AnalyzeHot 两处都会被调用，
+// 因为图谱关系是 AI 分析后才能产生（需要 typedEntities）。
+func (h *Handler) ingestEntitiesToGraph(hotID int64, keywordID *int64, res *analyzer.AnalysisResult) {
+	if h.graphRepo == nil {
+		return
+	}
+
+	// 1. 实体入库 → 拿 entityID
+	entityIDs := make([]int64, 0, len(res.TypedEntities))
+	for _, te := range res.TypedEntities {
+		id, err := h.graphRepo.EnsureEntity(te.Name, te.Kind)
+		if err != nil {
+			continue
+		}
+		entityIDs = append(entityIDs, id)
+	}
+	if len(entityIDs) == 0 {
+		return
+	}
+
+	// 2. 热点 → 实体 的 contains 边
+	for _, eid := range entityIDs {
+		_ = h.graphRepo.EnsureRelation("hot", hotID, "contains", "entity", eid, &hotID)
+	}
+
+	// 3. 关键词 → 实体 的 tracks 边（如果传了 keywordID）
+	if keywordID != nil {
+		_ = h.graphRepo.TrackKeywordToEntities(*keywordID, entityIDs, &hotID)
+	}
+
+	// 4. 实体之间两两共现边
+	for i := 0; i < len(entityIDs); i++ {
+		for j := i + 1; j < len(entityIDs); j++ {
+			a, b := entityIDs[i], entityIDs[j]
+			if a > b {
+				a, b = b, a
+			}
+			_ = h.graphRepo.EnsureRelation("entity", a, "cooccur", "entity", b, &hotID)
+		}
 	}
 }
 
@@ -276,6 +376,10 @@ func (h *Handler) AnalyzeHot(c *gin.Context) {
 		return
 	}
 
+	// 阶段 8：实体写入图谱
+	// 注意 AnalyzeHot 接口当前没有 keywordID，只能 ingest hot→entity，不建 keyword→entity 边
+	h.ingestEntitiesToGraph(id, nil, res)
+
 	// 5. 返回前端完整结果
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
@@ -357,6 +461,10 @@ func (h *Handler) TriggerCrawl(c *gin.Context) {
 			dbItems[i].IsAuthentic = &res.IsAuthentic
 			dbItems[i].Entities = string(entitiesJSON)
 			analyzed++
+
+			// 阶段 8：把 AI 抽取的实体写入图谱
+			// TriggerCrawl 时 keyword 不一定有 keywordID（手动抓取不绑定监控关键词），keywordID 传 nil
+			h.ingestEntitiesToGraph(dbItems[i].ID, nil, res)
 
 			// 阶段 6：单条分析完成 → WS 推给前端
 			if h.wsHub != nil {

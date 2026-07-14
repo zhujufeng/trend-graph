@@ -62,7 +62,7 @@ func New(dsn string) (*gorm.DB, error) {
 	//      - 表存在但少字段 → ALTER TABLE 加字段
 	//      - 不会删字段、不会改类型（保护数据）
 	//    开发期超方便，生产建议用 migration 工具（goose/atlas）
-	if err := db.AutoMigrate(&HotItem{}, &Keyword{}, &CrawlRun{}); err != nil {
+	if err := db.AutoMigrate(&HotItem{}, &Keyword{}, &CrawlRun{}, &Entity{}, &EntityRelation{}); err != nil {
 		return nil, fmt.Errorf("自动迁移失败: %w", err)
 	}
 	log.Println("数据库初始化 + AutoMigrate 完成")

@@ -13,8 +13,7 @@
 // - useState: 给组件加"状态变量"
 // - useEffect: 处理副作用（请求 API、订阅事件、定时等）
 import { useEffect, useState, useCallback } from 'react'
-// 图标库
-import { RefreshCw, Plus, Loader2, Sparkles, AlertCircle, Settings } from 'lucide-react'
+import { RefreshCw, Plus, Loader2, Sparkles, AlertCircle, Settings, Network as NetworkIcon } from 'lucide-react'
 
 // 我们自己写的 API 客户端和类型
 import { listHots, listSources, triggerCrawl, expandKeyword, getHot, analyzeHot } from '../api'
@@ -29,7 +28,12 @@ import { KeywordPanel } from '../components/KeywordPanel'
 const DEFAULT_SINCE = '24h'
 const DEFAULT_LIMIT = 20
 
-export function HotListPage() {
+interface HotListPageProps {
+  // 阶段 8：用户点 "查看图谱" 时回调，跳到 GraphPage
+  onNavigateGraph?: (keyword?: string) => void
+}
+
+export function HotListPage({ onNavigateGraph }: HotListPageProps = {}) {
   // ====== 状态 ======
   // useState 返回 [当前值, 修改值的函数]
   // 修改时 React 会自动重新渲染组件
@@ -317,6 +321,16 @@ export function HotListPage() {
             >
               <Settings className="w-3.5 h-3.5" />
               监控关键词
+            </button>
+
+            {/* 阶段 8：跳到关联图谱 */}
+            <button
+              onClick={() => onNavigateGraph?.(keyword)}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-purple-500/30 text-purple-400 rounded-md hover:bg-purple-500/10 transition"
+              title="查看关联图谱（差异化亮点）"
+            >
+              <NetworkIcon className="w-3.5 h-3.5" />
+              图谱
             </button>
 
             {/* 立即抓取 */}
