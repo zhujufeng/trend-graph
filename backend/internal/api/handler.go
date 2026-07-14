@@ -33,21 +33,34 @@ import (
 type Handler struct {
 	crawlers map[string]types.Crawler
 	hotRepo  *store.HotItemRepo
-	analyzer *analyzer.Analyzer
+	// 阶段 7 新增：关键词管理
+	keywordRepo *store.KeywordRepo
+	analyzer    *analyzer.Analyzer
 	// wsHub 用于实时推送（阶段 6 新增）
 	wsHub *notify.WebSocketHub
 }
 
 // NewHandler 构造函数（参数继续扩展）
 //
-// 注意可选依赖：analyzer 可以为 nil，没有配置 AI 时仍能跑基础抓取。
-// wsHub 阶段 6 必需（为支持实时推送），但允许 nil 以便早期单元测试。
-func NewHandler(hotRepo *store.HotItemRepo, an *analyzer.Analyzer, wsHub *notify.WebSocketHub, crawlers ...types.Crawler) *Handler {
+// 注意可选依赖：analyzer/wsHub 可以为 nil 以便早期单元测试。
+func NewHandler(
+	hotRepo *store.HotItemRepo,
+	keywordRepo *store.KeywordRepo,
+	an *analyzer.Analyzer,
+	wsHub *notify.WebSocketHub,
+	crawlers ...types.Crawler,
+) *Handler {
 	m := make(map[string]types.Crawler, len(crawlers))
 	for _, c := range crawlers {
 		m[c.Source()] = c
 	}
-	return &Handler{crawlers: m, hotRepo: hotRepo, analyzer: an, wsHub: wsHub}
+	return &Handler{
+		crawlers:    m,
+		hotRepo:     hotRepo,
+		keywordRepo: keywordRepo,
+		analyzer:    an,
+		wsHub:       wsHub,
+	}
 }
 
 // Register 路由注册
@@ -62,7 +75,110 @@ func (h *Handler) Register(r *gin.Engine) {
 		// 阶段 3 新增
 		api.POST("/expand", h.ExpandQuery)
 		api.POST("/analyze/:id", h.AnalyzeHot)
+
+		// 阶段 7 新增：关键词管理
+		api.GET("/keywords", h.ListKeywords)
+		api.POST("/keywords", h.CreateKeyword)
+		api.PATCH("/keywords/:id", h.UpdateKeyword)
+		api.DELETE("/keywords/:id", h.DeleteKeyword)
 	}
+}
+
+// ===== 阶段 7：关键词管理 =====
+
+// CreateKeyword POST /api/keywords
+// Body: {"word":"AI","note":"监控大模型动态","intervalMin":30}
+func (h *Handler) CreateKeyword(c *gin.Context) {
+	if h.keywordRepo == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "keywordRepo not configured"})
+		return
+	}
+	var body struct {
+		Word        string `json:"word"`
+		Note        string `json:"note"`
+		IntervalMin int    `json:"intervalMin"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.Word == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "word 必填"})
+		return
+	}
+	k, err := h.keywordRepo.Create(body.Word, body.Note, body.IntervalMin)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "create failed", "detail": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": k})
+}
+
+// ListKeywords GET /api/keywords?activeOnly=true
+func (h *Handler) ListKeywords(c *gin.Context) {
+	if h.keywordRepo == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "keywordRepo not configured"})
+		return
+	}
+	activeOnly := c.Query("activeOnly") == "true"
+	ks, err := h.keywordRepo.List(activeOnly)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed", "detail": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": ks, "count": len(ks)})
+}
+
+// UpdateKeyword PATCH /api/keywords/:id
+// Body: {"active":false} 或 {"intervalMin":60}
+func (h *Handler) UpdateKeyword(c *gin.Context) {
+	if h.keywordRepo == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "keywordRepo not configured"})
+		return
+	}
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		Active      *bool `json:"active"`
+		IntervalMin *int  `json:"intervalMin"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
+	if body.Active != nil {
+		if err := h.keywordRepo.UpdateActive(id, *body.Active); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "update failed", "detail": err.Error()})
+			return
+		}
+	}
+	if body.IntervalMin != nil {
+		if err := h.keywordRepo.UpdateInterval(id, *body.IntervalMin); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "update failed", "detail": err.Error()})
+			return
+		}
+	}
+	k, _ := h.keywordRepo.Get(id)
+	c.JSON(http.StatusOK, gin.H{"data": k})
+}
+
+// DeleteKeyword DELETE /api/keywords/:id
+func (h *Handler) DeleteKeyword(c *gin.Context) {
+	if h.keywordRepo == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "keywordRepo not configured"})
+		return
+	}
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	if err := h.keywordRepo.Delete(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "delete failed", "detail": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"id": id, "deleted": true}})
 }
 
 // ExpandQuery POST /api/expand

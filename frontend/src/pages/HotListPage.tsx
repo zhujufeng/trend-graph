@@ -14,7 +14,7 @@
 // - useEffect: 处理副作用（请求 API、订阅事件、定时等）
 import { useEffect, useState, useCallback } from 'react'
 // 图标库
-import { RefreshCw, Plus, Loader2, Sparkles, AlertCircle } from 'lucide-react'
+import { RefreshCw, Plus, Loader2, Sparkles, AlertCircle, Settings } from 'lucide-react'
 
 // 我们自己写的 API 客户端和类型
 import { listHots, listSources, triggerCrawl, expandKeyword, getHot, analyzeHot } from '../api'
@@ -23,6 +23,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import type { WSMessage } from '../hooks/useWebSocket'
 import type { HotItem, ListParams } from '../types'
 import { HotCard } from '../components/HotCard'
+import { KeywordPanel } from '../components/KeywordPanel'
 
 // 默认值
 const DEFAULT_SINCE = '24h'
@@ -55,6 +56,8 @@ export function HotListPage() {
   const [analyzingId, setAnalyzingId] = useState<number | null>(null)
   const [expandedKeywords, setExpandedKeywords] = useState<string[] | null>(null)
   const [expanding, setExpanding] = useState(false)
+  // 阶段 7：监控关键词管理面板
+  const [showKeywordPanel, setShowKeywordPanel] = useState(false)
 
   // ====== 副作用 ======
   // useEffect 在组件渲染后执行
@@ -306,6 +309,16 @@ export function HotListPage() {
               AI 扩展
             </button>
 
+            {/* 阶段 7：监控关键词面板 */}
+            <button
+              onClick={() => setShowKeywordPanel(true)}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-border text-text-secondary rounded-md hover:border-accent hover:text-accent transition"
+              title="管理监控关键词（自动抓取+通知）"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              监控关键词
+            </button>
+
             {/* 立即抓取 */}
             <button
               onClick={handleCrawl}
@@ -425,6 +438,11 @@ export function HotListPage() {
           </a>
         </div>
       </footer>
+
+      {/* 阶段 7：监控关键词管理面板（模态浮层） */}
+      {showKeywordPanel && (
+        <KeywordPanel onClose={() => setShowKeywordPanel(false)} />
+      )}
     </div>
   )
 }

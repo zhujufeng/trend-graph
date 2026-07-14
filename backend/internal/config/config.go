@@ -41,6 +41,19 @@ type Config struct {
 	DeepSeekAPIKey  string
 	DeepSeekModel   string
 	DeepSeekBaseURL string
+
+	// 阶段 7 通知渠道配置
+	// 任何一项留空就跳过对应渠道
+	SMTPHost  string
+	SMTPPort  string // string 方便处理
+	SMTPUser  string
+	SMTPPass  string
+	SMTPFrom  string
+	SMTPTo    string // 逗号分隔多收件人
+
+	FeishuWebhook   string
+	DingTalkWebhook string
+	DingTalkSecret  string
 }
 
 // Load 加载配置。
@@ -63,6 +76,17 @@ func Load() *Config {
 		DeepSeekAPIKey:  getEnv("DEEPSEEK_API_KEY", ""),
 		DeepSeekModel:   getEnv("DEEPSEEK_MODEL", "deepseek-chat"),
 		DeepSeekBaseURL: getEnv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+
+		// 阶段 7 通知配置
+		SMTPHost:        getEnv("SMTP_HOST", ""),
+		SMTPPort:        getEnv("SMTP_PORT", "465"),
+		SMTPUser:        getEnv("SMTP_USER", ""),
+		SMTPPass:        getEnv("SMTP_PASS", ""),
+		SMTPFrom:        getEnv("SMTP_FROM", ""),
+		SMTPTo:          getEnv("SMTP_TO", ""),
+		FeishuWebhook:   getEnv("FEISHU_WEBHOOK", ""),
+		DingTalkWebhook: getEnv("DINGTALK_WEBHOOK", ""),
+		DingTalkSecret:  getEnv("DINGTALK_SECRET", ""),
 	}
 
 	// 阶段 2 数据库是必需的，没配就报错退出
