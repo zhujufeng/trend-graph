@@ -131,17 +131,19 @@
 
 ---
 
-## 阶段 9：Docker Compose 部署上 VPS
+## 阶段 9：VPS 直接部署（systemd + nginx + Caddy HTTPS）
 
-**目标**：用 Docker Compose 一键起 Postgres + 后端 + 前端，部署到你自己的 VPS。
+**目标**：用 systemd + nginx 把项目部署到 VPS，绑域名加 HTTPS。
 
 **学到的概念**：
-- Dockerfile（多阶段构建）
-- docker-compose.yml 编排
-- Nginx 反向代理 + HTTPS
-- VPS 服务器运维基础
+- systemd 服务单元文件
+- nginx 反向代理 + 静态托管
+- WebSocket 反代特殊头
+- Caddy 自动签 Let's Encrypt 证书
 
-**产出**：公网可访问的 trend-graph.yourdomain.com。
+**产出**：公网可访问的 https://你的域名.com
+
+详见 [DEPLOYMENT.md](DEPLOYMENT.md)。
 
 ---
 

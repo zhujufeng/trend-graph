@@ -59,12 +59,34 @@ trend-graph/
 - [x] 阶段 6：WebSocket 实时推送
 - [x] 阶段 7：定时任务 + 多渠道通知
 - [x] 阶段 8：🎯 关联图谱差异化亮点
-- [ ] 阶段 9：Docker Compose 部署上 VPS
-- [ ] 阶段 10：README + 简历亮点话术
+- [x] 阶段 9：VPS 直接部署（systemd + nginx + Caddy HTTPS）
+- [x] 阶段 10：README + 教学文档 + 简历亮点话术
 
 ## 本地运行
 
 详见 [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)。
+
+## 部署上线
+
+详见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)（VPS + systemd + nginx + Caddy HTTPS）。
+
+## 学习文档
+
+每个阶段都有详细教学笔记，配合源码阅读：
+
+- [docs/ROADMAP.md](docs/ROADMAP.md) — 10 阶段学习路线总览
+- [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) — 本地环境准备
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — VPS 部署指南
+- [docs/STAGE-1.md](docs/STAGE-1.md) — HackerNews 单源抓取 + Gin
+- [docs/STAGE-2.md](docs/STAGE-2.md) — GORM + PostgreSQL 持久化
+- [docs/STAGE-3.md](docs/STAGE-3.md) — DeepSeek AI 接入
+- [docs/STAGE-4.md](docs/STAGE-4.md) — React + TS 前端骨架
+- [docs/STAGE-5.md](docs/STAGE-5.md) — 9 源并发抓取
+- [docs/STAGE-6.md](docs/STAGE-6.md) — WebSocket 实时推送
+- [docs/STAGE-7.md](docs/STAGE-7.md) — 定时任务 + 多渠道通知
+- [docs/STAGE-8.md](docs/STAGE-8.md) — 关联图谱差异化亮点
+- [docs/LEARNING_NOTES.md](docs/LEARNING_NOTES.md) — Go + TS 知识图谱
+- [docs/RESUME.md](docs/RESUME.md) — 简历亮点话术 + 面试题
 
 ## 致谢
 
