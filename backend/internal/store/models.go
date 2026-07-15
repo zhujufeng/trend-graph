@@ -96,8 +96,8 @@ func (HotItem) TableName() string { return "hot_items" }
 //
 // 用户在前端加个"AI"，激活后定时任务会拉取相关热点。
 type Keyword struct {
-	ID    int64  `gorm:"primaryKey;autoIncrement" json:"id"`
-	Word  string `gorm:"type:varchar(128);not null;uniqueIndex" json:"word"`
+	ID   int64  `gorm:"primaryKey;autoIncrement" json:"id"`
+	Word string `gorm:"type:varchar(128);not null;uniqueIndex" json:"word"`
 	// 激活状态：true 代表定时抓，false 代表暂停
 	Active bool `gorm:"default:true" json:"active"`
 	// 抓取间隔（分钟），默认 30
@@ -118,14 +118,14 @@ func (Keyword) TableName() string { return "keywords" }
 //
 // 用途：审计、监控爬虫健康状况、避免短时间内重复跑。
 type CrawlRun struct {
-	ID         int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	KeywordID  *int64    `gorm:"index" json:"keywordId,omitempty"`
-	Source     string    `gorm:"type:varchar(32);not null;index" json:"source"`
-	Keyword    string    `gorm:"type:varchar(128)" json:"keyword"`
-	Status     string    `gorm:"type:varchar(16);not null" json:"status"` // success/failed/running
-	ItemCount  int       `gorm:"default:0" json:"itemCount"`
-	ErrorMsg   string    `gorm:"type:text" json:"errorMsg,omitempty"`
-	StartedAt  time.Time `gorm:"not null" json:"startedAt"`
+	ID         int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	KeywordID  *int64     `gorm:"index" json:"keywordId,omitempty"`
+	Source     string     `gorm:"type:varchar(32);not null;index" json:"source"`
+	Keyword    string     `gorm:"type:varchar(128)" json:"keyword"`
+	Status     string     `gorm:"type:varchar(16);not null" json:"status"` // success/failed/running
+	ItemCount  int        `gorm:"default:0" json:"itemCount"`
+	ErrorMsg   string     `gorm:"type:text" json:"errorMsg,omitempty"`
+	StartedAt  time.Time  `gorm:"not null" json:"startedAt"`
 	FinishedAt *time.Time `json:"finishedAt,omitempty"`
 
 	CreatedAt time.Time      `gorm:"autoCreateTime" json:"createdAt"`
@@ -134,6 +134,129 @@ type CrawlRun struct {
 }
 
 func (CrawlRun) TableName() string { return "crawl_runs" }
+
+// AdminSession 保存管理员浏览器会话的哈希值。原始 token 仅通过 HttpOnly Cookie
+// 交给浏览器，数据库泄露时也不能直接复用会话。
+type AdminSession struct {
+	ID        int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	TokenHash string    `gorm:"type:char(64);not null;uniqueIndex" json:"-"`
+	ExpiresAt time.Time `gorm:"not null;index" json:"expiresAt"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt"`
+}
+
+func (AdminSession) TableName() string { return "admin_sessions" }
+
+// SourceConfig controls one source without hard-coding source behaviour into
+// scheduler jobs. SettingsJSON holds source-specific options such as the
+// editable Reddit community allowlist.
+type SourceConfig struct {
+	ID            int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Source        string     `gorm:"type:varchar(32);not null;uniqueIndex" json:"source"`
+	Enabled       bool       `gorm:"not null;default:false" json:"enabled"`
+	SettingsJSON  string     `gorm:"type:jsonb;not null;default:'{}'" json:"settings"`
+	LastSuccessAt *time.Time `json:"lastSuccessAt,omitempty"`
+	LastFailure   string     `gorm:"type:text" json:"lastFailure,omitempty"`
+	CreatedAt     time.Time  `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt     time.Time  `gorm:"autoUpdateTime" json:"updatedAt"`
+}
+
+func (SourceConfig) TableName() string { return "source_configs" }
+
+// CollectionRun is the source-health audit trail. It is intentionally
+// separate from the legacy keyword-oriented CrawlRun model.
+type CollectionRun struct {
+	ID            int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Source        string     `gorm:"type:varchar(32);not null;index" json:"source"`
+	Status        string     `gorm:"type:varchar(16);not null;index" json:"status"`
+	ItemCount     int        `gorm:"not null;default:0" json:"itemCount"`
+	DurationMS    int64      `gorm:"not null;default:0" json:"durationMs"`
+	FailureReason string     `gorm:"type:text" json:"failureReason,omitempty"`
+	StartedAt     time.Time  `gorm:"not null;index" json:"startedAt"`
+	FinishedAt    *time.Time `json:"finishedAt,omitempty"`
+	CreatedAt     time.Time  `gorm:"autoCreateTime" json:"createdAt"`
+}
+
+func (CollectionRun) TableName() string { return "collection_runs" }
+
+// Signal is the canonical, source-backed unit shown in the radar. The unique
+// source/canonical URL pair prevents duplicate model calls and notifications.
+type Signal struct {
+	ID                  int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Source              string     `gorm:"type:varchar(32);not null;uniqueIndex:idx_signal_source_canonical" json:"source"`
+	CanonicalURL        string     `gorm:"type:varchar(1000);not null;uniqueIndex:idx_signal_source_canonical" json:"canonicalUrl"`
+	OriginalURL         string     `gorm:"type:varchar(1000);not null" json:"originalUrl"`
+	OriginalTitle       string     `gorm:"type:varchar(500);not null" json:"originalTitle"`
+	Author              string     `gorm:"type:varchar(128)" json:"author,omitempty"`
+	SourcePublishedAt   *time.Time `gorm:"index" json:"sourcePublishedAt,omitempty"`
+	SourceUpdatedAt     *time.Time `gorm:"index" json:"sourceUpdatedAt,omitempty"`
+	Score               float64    `gorm:"not null;default:0" json:"score"`
+	Qualification       string     `gorm:"type:varchar(32);not null;default:'pending';index" json:"qualification"`
+	QualificationReason string     `gorm:"type:varchar(64);not null;default:''" json:"qualificationReason,omitempty"`
+	LifecycleState      string     `gorm:"type:varchar(32);not null;default:'new';index" json:"lifecycleState"`
+	CreatedAt           time.Time  `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt           time.Time  `gorm:"autoUpdateTime" json:"updatedAt"`
+}
+
+func (Signal) TableName() string { return "signals" }
+
+// EvidenceSnapshot freezes the exact material used to make an interpretation
+// or create a content package. ContentHash makes unchanged re-fetches cheap.
+type EvidenceSnapshot struct {
+	ID            int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	SignalID      int64     `gorm:"not null;index" json:"signalId"`
+	SourceURL     string    `gorm:"type:varchar(1000);not null" json:"sourceUrl"`
+	EvidenceClass string    `gorm:"type:varchar(32);not null" json:"evidenceClass"`
+	Title         string    `gorm:"type:varchar(500)" json:"title,omitempty"`
+	Excerpt       string    `gorm:"type:text;not null" json:"excerpt"`
+	ContentHash   string    `gorm:"type:char(64);not null;index" json:"contentHash"`
+	CapturedAt    time.Time `gorm:"not null;index" json:"capturedAt"`
+	CreatedAt     time.Time `gorm:"autoCreateTime" json:"createdAt"`
+}
+
+func (EvidenceSnapshot) TableName() string { return "evidence_snapshots" }
+
+type SignalAnalysis struct {
+	ID                 int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	SignalID           int64     `gorm:"not null;uniqueIndex" json:"signalId"`
+	EvidenceSnapshotID int64     `gorm:"not null;index" json:"evidenceSnapshotId"`
+	Model              string    `gorm:"type:varchar(128);not null" json:"model"`
+	AnalysisJSON       string    `gorm:"type:jsonb;not null" json:"analysis"`
+	InputTokens        int       `gorm:"not null;default:0" json:"inputTokens"`
+	OutputTokens       int       `gorm:"not null;default:0" json:"outputTokens"`
+	CreatedAt          time.Time `gorm:"autoCreateTime" json:"createdAt"`
+}
+
+func (SignalAnalysis) TableName() string { return "signal_analyses" }
+
+type ContentPackage struct {
+	ID                 int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	SignalID           int64      `gorm:"not null;index" json:"signalId"`
+	EvidenceSnapshotID int64      `gorm:"not null;index" json:"evidenceSnapshotId"`
+	Status             string     `gorm:"type:varchar(32);not null;default:'draft';index" json:"status"`
+	StrategyJSON       string     `gorm:"type:jsonb;not null" json:"strategy"`
+	XiaohongshuJSON    string     `gorm:"type:jsonb;not null" json:"xiaohongshu"`
+	WechatJSON         string     `gorm:"type:jsonb;not null" json:"wechat"`
+	XJSON              string     `gorm:"type:jsonb;not null" json:"x"`
+	VisualPlanJSON     string     `gorm:"type:jsonb;not null" json:"visualPlan"`
+	ApprovedAt         *time.Time `json:"approvedAt,omitempty"`
+	CreatedAt          time.Time  `gorm:"autoCreateTime" json:"createdAt"`
+	UpdatedAt          time.Time  `gorm:"autoUpdateTime" json:"updatedAt"`
+}
+
+func (ContentPackage) TableName() string { return "content_packages" }
+
+type DeliveryRun struct {
+	ID             int64      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Kind           string     `gorm:"type:varchar(32);not null;index" json:"kind"`
+	IdempotencyKey string     `gorm:"type:varchar(255);not null;uniqueIndex" json:"idempotencyKey"`
+	SignalIDsJSON  string     `gorm:"type:jsonb;not null" json:"signalIds"`
+	Status         string     `gorm:"type:varchar(16);not null;index" json:"status"`
+	FailureReason  string     `gorm:"type:text" json:"failureReason,omitempty"`
+	SentAt         *time.Time `json:"sentAt,omitempty"`
+	CreatedAt      time.Time  `gorm:"autoCreateTime" json:"createdAt"`
+}
+
+func (DeliveryRun) TableName() string { return "delivery_runs" }
 
 // FromBiz 把一个 types.HotItem（业务实体）转成 store.HotItem（DB 模型）。
 //

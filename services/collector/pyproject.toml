@@ -1,0 +1,9 @@
+[project]
+name = "ai-signal-collector"
+version = "0.1.0"
+description = "Evidence-first collectors for AI Signal Radar"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false

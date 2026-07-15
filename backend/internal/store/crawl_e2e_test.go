@@ -20,11 +20,11 @@ import (
 // TestEndToEnd_HNToDB 真打 HN API + 真 INSERT PostgreSQL
 // 这个测试是阶段 2 的"毕业测试"，通过即意味着阶段 2 主流程完成。
 func TestEndToEnd_HNToDB(t *testing.T) {
-	// 1. 准备 DB
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "host=127.0.0.1 port=5432 user=tguser password=tgpass dbname=trend_graph sslmode=disable timezone=Asia/Shanghai"
+	if os.Getenv("RUN_LIVE_TESTS") != "1" {
+		t.Skip("set RUN_LIVE_TESTS=1 to run networked integration tests")
 	}
+	// 1. 准备 DB
+	dsn := testDatabaseURL(t)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Warn),
 	})

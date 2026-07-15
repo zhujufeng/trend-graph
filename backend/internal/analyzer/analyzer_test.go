@@ -8,36 +8,26 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joho/godotenv"
-
 	"trend-graph/internal/ai"
 	"trend-graph/internal/types"
 )
 
-// TestMain 是 Go 测试包的入口函数。
-// 我们在这里加载 backend/.env，让所有测试都能读到 DEEPSEEK_API_KEY 等配置。
-//
-// 注意 m.Run() 必须调用，否则测试不执行。
-//
-// godotenv.Load 用的是相对于"运行 go test 的工作目录"的路径。
-// 我们约定 go test 总在 backend/ 下执行，所以 `.env` 就是 backend/.env。
-// 为了健壮也加载 ../.env 作为兜底。
 func TestMain(m *testing.M) {
-	// go test 的工作目录是测试源码所在目录，即 internal/analyzer/
-	// 要读 backend/.env 需要向上两级
-	_ = godotenv.Load("../../.env")
 	os.Exit(m.Run())
 }
 
 func newTestAnalyzer(t *testing.T) *Analyzer {
-	key := os.Getenv("DEEPSEEK_API_KEY")
-	if key == "" {
-		t.Skip("DEEPSEEK_API_KEY 未设置，跳过集成测试")
+	if os.Getenv("RUN_LIVE_TESTS") != "1" {
+		t.Skip("set RUN_LIVE_TESTS=1 to call DeepSeek")
 	}
-	base := os.Getenv("DEEPSEEK_BASE_URL")
-	model := os.Getenv("DEEPSEEK_MODEL")
+	key := os.Getenv("TEST_DEEPSEEK_API_KEY")
+	if key == "" {
+		t.Skip("TEST_DEEPSEEK_API_KEY 未设置，跳过集成测试")
+	}
+	base := os.Getenv("TEST_DEEPSEEK_BASE_URL")
+	model := os.Getenv("TEST_DEEPSEEK_MODEL")
 	if model == "" {
-		model = "deepseek-chat"
+		model = "deepseek-v4-pro"
 	}
 	cli := ai.NewDeepSeekClient(key, base)
 	return NewAnalyzer(cli, model)

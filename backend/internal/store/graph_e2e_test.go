@@ -20,11 +20,11 @@ import (
 
 // TestE2E_Graph 端到端：HN 抓 → AI 抽实体 → 入图谱 → 查图
 func TestE2E_Graph(t *testing.T) {
-	// 1. 准备 DB
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "host=127.0.0.1 port=5432 user=tguser password=tgpass dbname=trend_graph sslmode=disable timezone=Asia/Shanghai"
+	if os.Getenv("RUN_LIVE_TESTS") != "1" {
+		t.Skip("set RUN_LIVE_TESTS=1 to run networked integration tests")
 	}
+	// 1. 准备 DB
+	dsn := testDatabaseURL(t)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Warn)})
 	if err != nil {
 		t.Fatalf("DB 失败: %v", err)
@@ -32,12 +32,12 @@ func TestE2E_Graph(t *testing.T) {
 	db.AutoMigrate(&HotItem{}, &Keyword{}, &CrawlRun{}, &Entity{}, &EntityRelation{})
 
 	// 2. 准备 AI
-	key := os.Getenv("DEEPSEEK_API_KEY")
+	key := os.Getenv("TEST_DEEPSEEK_API_KEY")
 	if key == "" {
-		t.Skip("DEEPSEEK_API_KEY 未设置")
+		t.Skip("TEST_DEEPSEEK_API_KEY 未设置")
 	}
-	cli := ai.NewDeepSeekClient(key, "")
-	an := analyzer.NewAnalyzer(cli, "deepseek-chat")
+	cli := ai.NewDeepSeekClient(key, os.Getenv("TEST_DEEPSEEK_BASE_URL"))
+	an := analyzer.NewAnalyzer(cli, "deepseek-v4-pro")
 
 	// 3. 抓 3 条 HN
 	hn := crawler.NewHackerNewsCrawler()

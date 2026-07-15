@@ -71,3 +71,50 @@ export interface ListParams {
 
 // AI 查询扩展结果
 export type ExpandResult = string[]
+
+export interface EvidenceSnapshot {
+  id: number
+  signalId: number
+  sourceUrl: string
+  evidenceClass: string
+  title?: string
+  excerpt: string
+  contentHash: string
+  capturedAt: string
+  createdAt: string
+}
+
+export interface SignalAnalysis {
+  whatChanged?: string
+  action?: string
+  contentOpportunity?: string
+  [key: string]: unknown
+}
+
+export interface RadarSignal {
+  id: number
+  source: string
+  title: string
+  originalUrl: string
+  author?: string
+  score: number
+  qualification: string
+  qualificationReason?: string
+  lifecycleState: string
+  sourcePublishedAt?: string
+  sourceUpdatedAt?: string
+  createdAt: string
+  evidence?: EvidenceSnapshot
+  analysis?: SignalAnalysis
+}
+
+export interface SourceConfig {
+  source: string
+  enabled: boolean
+  settings: {
+    communities?: string[]
+  }
+  lastSuccessAt?: string
+  lastFailure?: string
+  updatedAt: string
+}

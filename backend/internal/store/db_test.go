@@ -3,7 +3,6 @@
 package store
 
 import (
-	"os"
 	"testing"
 	"time"
 
@@ -14,10 +13,7 @@ import (
 
 // testDB 测试用一启动就建好的全局 db 实例
 func testDB(t *testing.T) *gorm.DB {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "host=127.0.0.1 port=5432 user=tguser password=tgpass dbname=trend_graph sslmode=disable timezone=Asia/Shanghai"
-	}
+	dsn := testDatabaseURL(t)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Warn),
 	})

@@ -23,13 +23,14 @@ import (
 // New 创建并返回 *gorm.DB。
 //
 // 步骤：
-//   1) 用配置 dsn 拨号到 PostgreSQL
-//   2) 配置连接池（生产环境重要！）
-//   3) 自动迁移（AutoMigrate）把模型同步到表结构
-//   4) 返回可用的 db 实例
+//  1. 用配置 dsn 拨号到 PostgreSQL
+//  2. 配置连接池（生产环境重要！）
+//  3. 自动迁移（AutoMigrate）把模型同步到表结构
+//  4. 返回可用的 db 实例
 //
 // 参数 dsn 是 PostgreSQL 连接串，
-//   格式: host=... port=... user=... password=... dbname=... sslmode=...
+//
+//	格式: host=... port=... user=... password=... dbname=... sslmode=...
 func New(dsn string) (*gorm.DB, error) {
 	// 1. 打开连接。gorm.Open 不会真的连，只是初始化实例，
 	//    真正的连接池在第一次查询时建立。
@@ -62,7 +63,11 @@ func New(dsn string) (*gorm.DB, error) {
 	//      - 表存在但少字段 → ALTER TABLE 加字段
 	//      - 不会删字段、不会改类型（保护数据）
 	//    开发期超方便，生产建议用 migration 工具（goose/atlas）
-	if err := db.AutoMigrate(&HotItem{}, &Keyword{}, &CrawlRun{}, &Entity{}, &EntityRelation{}); err != nil {
+	if err := db.AutoMigrate(
+		&HotItem{}, &Keyword{}, &CrawlRun{}, &Entity{}, &EntityRelation{}, &AdminSession{},
+		&SourceConfig{}, &CollectionRun{}, &Signal{}, &EvidenceSnapshot{}, &SignalAnalysis{},
+		&ContentPackage{}, &DeliveryRun{},
+	); err != nil {
 		return nil, fmt.Errorf("自动迁移失败: %w", err)
 	}
 	log.Println("数据库初始化 + AutoMigrate 完成")

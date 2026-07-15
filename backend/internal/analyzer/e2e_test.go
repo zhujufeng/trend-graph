@@ -7,6 +7,7 @@ package analyzer
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,23 +21,26 @@ import (
 )
 
 func TestE2E_CrawlToAnalyze(t *testing.T) {
-	// 1. 准备 AI
-	key := os.Getenv("DEEPSEEK_API_KEY")
-	if key == "" {
-		t.Skip("DEEPSEEK_API_KEY 未设置")
+	if os.Getenv("RUN_LIVE_TESTS") != "1" {
+		t.Skip("set RUN_LIVE_TESTS=1 to run networked integration tests")
 	}
-	base := os.Getenv("DEEPSEEK_BASE_URL")
-	model := os.Getenv("DEEPSEEK_MODEL")
+	// 1. 准备 AI
+	key := os.Getenv("TEST_DEEPSEEK_API_KEY")
+	if key == "" {
+		t.Skip("TEST_DEEPSEEK_API_KEY 未设置")
+	}
+	base := os.Getenv("TEST_DEEPSEEK_BASE_URL")
+	model := os.Getenv("TEST_DEEPSEEK_MODEL")
 	if model == "" {
-		model = "deepseek-chat"
+		model = "deepseek-v4-pro"
 	}
 	cli := ai.NewDeepSeekClient(key, base)
 	an := NewAnalyzer(cli, model)
 
 	// 2. 准备 DB
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "host=127.0.0.1 port=5432 user=tguser password=tgpass dbname=trend_graph sslmode=disable timezone=Asia/Shanghai"
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if !strings.Contains(dsn, "trend_graph_test") {
+		t.Skip("TEST_DATABASE_URL 必须指向专用 trend_graph_test 数据库")
 	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Warn)})
 	if err != nil {

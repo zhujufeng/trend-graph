@@ -31,7 +31,7 @@ import (
 type Analyzer struct {
 	// ai 是大模型客户端（依赖注入，方便测试时换 mock）
 	ai ai.Client
-	// model 是要调的模型，例如 "deepseek-chat"
+	// model 是要调的模型，例如 "deepseek-v4-pro"
 	model string
 }
 
@@ -109,13 +109,13 @@ func (a *Analyzer) ExpandQuery(ctx context.Context, keyword string) ([]string, e
 //
 // 这个 struct 既是 AI 输出 JSON 解析的目标，也是 store 层的字段来源。
 type AnalysisResult struct {
-	Summary     string       `json:"summary"`      // 一句话摘要
-	Relevance   float64      `json:"relevance"`    // 0~1 相关性
-	IsAuthentic bool         `json:"isAuthentic"`  // 是否可信（排除明显谣言）
-	Entities    []string     `json:"entities"`     // 兼容老结构：实体名列表
+	Summary     string   `json:"summary"`     // 一句话摘要
+	Relevance   float64  `json:"relevance"`   // 0~1 相关性
+	IsAuthentic bool     `json:"isAuthentic"` // 是否可信（排除明显谣言）
+	Entities    []string `json:"entities"`    // 兼容老结构：实体名列表
 	// 阶段 8 新增：实体带类型，用于关联图谱
 	TypedEntities []TypedEntity `json:"typedEntities"`
-	Reason      string        `json:"reason"`        // 判断理由（便于调试）
+	Reason        string        `json:"reason"` // 判断理由（便于调试）
 }
 
 // TypedEntity 带类型的实体（阶段 8 关联图谱用）
@@ -167,8 +167,8 @@ func (a *Analyzer) AnalyzeHot(ctx context.Context, keyword string, item types.Ho
 			{Role: "user", Content: userPrompt},
 		},
 		Temperature:    0.2,
-		MaxTokens:       400,
-		ResponseFormat:  &ai.ResponseFormat{Type: "json_object"},
+		MaxTokens:      400,
+		ResponseFormat: &ai.ResponseFormat{Type: "json_object"},
 	}
 
 	content, _, err := a.ai.Chat(ctx, req)

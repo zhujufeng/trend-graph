@@ -1,0 +1,141 @@
+# AI Signal Radar Contract
+
+## Scenario: Qualify, analyze, and digest evidence-backed AI signals
+
+### 1. Scope / Trigger
+
+- Trigger: a collected signal crosses persistence, deterministic qualification, DeepSeek analysis, dashboard, and Feishu digest boundaries.
+- Trigger: a backend process with collection enabled starts and must not leave a new dashboard empty until the next cron tick.
+- Preserve original evidence and reject non-actionable catalog entries before spending model quota.
+
+### 2. Signatures
+
+- `radar.Qualify(signal store.Signal, evidence store.EvidenceSnapshot, now time.Time) QualificationDecision`
+- `(*radar.AnalysisRunner).Run(ctx context.Context, now time.Time) (AnalysisRunResult, error)`
+- `radar.NewCollectionRunner(repo, collectorDir, backendURL, secret).Run(ctx) error`
+- `(*store.SourceConfigRepo).RecordCollectionRun(store.CollectionRun) error`
+- `radar.NewCollectionCron(job func()) (*cron.Cron, error)`
+- `(*analyzer.Analyzer).AnalyzeSignal(ctx, analyzer.SignalInput, analyzer.EvidenceInput) (analyzer.SignalAnalysisOutput, error)`
+- `radar.BuildDigest(items []store.RadarSignal, now time.Time) (Digest, error)`
+- `notify.FeishuNotifier.Notify(ctx, notify.FeishuPost) error`
+- Collector command: `uv run --no-sync python -m signal_collector.cli --source {waytoagi,skillsmp,github,reddit}`; SkillsMP/GitHub also require `--query`.
+- Runtime environment: `COLLECTOR_DIR` defaults to `../services/collector`; the Go runner supplies `BACKEND_URL` and `INTERNAL_INGEST_SECRET` directly to the child process.
+- Python seams: `search()` or `list_candidates()` returns `Candidate`; `fetch_detail(Candidate)` returns `EvidenceDetail`.
+- DB transition: `signals.qualification=pending -> qualified|rejected`; qualified writes `signal_analyses` and the signal state in one transaction.
+
+### 3. Contracts
+
+- Accepted sources are `waytoagi`, `skillsmp`, `github`, and `reddit`; X is deferred and Linux.do is excluded.
+- Recency is 30 days, preferring source update time, then publish time, then creation time.
+- SkillsMP `catalog_discovery` is only a lead and must be rejected with `github_verification_required` until original GitHub documentation is captured.
+- The SkillsMP collector must follow its GitHub URL and read the referenced `SKILL.md`; successful evidence uses the GitHub URL and `original_documentation`, not the catalog page.
+- GitHub search uses repository metadata; detail uses the JSON Contents API and decodes its Base64 `content`, then appends the latest release when present.
+- GitHub/SkillsMP require `original_documentation` plus a usable setup/run indicator; Reddit requires `community_discussion`.
+- Reddit requires `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET`, requests application-only OAuth, calls `oauth.reddit.com`, and only reads `REDDIT_COMMUNITIES` or the explicit `--communities` allowlist. `r/all` is forbidden at both configuration and collector boundaries.
+- `GITHUB_TOKEN` and `SKILLSMP_API_KEY` are optional; a missing Reddit credential is a degraded-source error, never permission to scrape logged-out pages.
+- `DEEPSEEK_MODEL` defaults to `deepseek-v4-pro`; the daily Asia/Shanghai model-analysis quota is 30 newly analyzed signals.
+- Structured JSON preserves `evidenceClass` and includes facts with source URLs, `whatChanged`, audience, practical use, prerequisites, pain point, action, content opportunity, uncertainty, and alert decision.
+- Schedules use Asia/Shanghai: collection `0 */3 * * *`, pre-digest refresh `40 7,17 * * *`, digest `0 8,18 * * *`.
+- Go owns scheduling and source health; Python owns source-specific collection and authenticated ingestion. Disabled sources never start a process.
+- A failed source records a failed `collection_runs` row and updates `source_configs.last_failure`, but does not prevent later enabled sources from running. Success updates `last_success_at` and clears `last_failure` in the same transaction as its audit row.
+- The collection runner must prevent overlapping whole rounds. Cron wrappers alone are insufficient because the regular and pre-digest entries have separate overlap locks.
+- When collection is configured, backend startup binds the HTTP listener first and then starts one asynchronous collection round. This guarantees the Python child can call the internal ingestion route; scheduled rounds remain unchanged.
+- Pending signals may appear only in a clearly labeled `最新采集（待分析）` section. They must never be promoted into `今日必读`, tools, content opportunities, digests, or alerts before qualification.
+- A digest contains at most 8 qualified analyzed signals and 3 content opportunities, preserving each original URL. Feishu uses `msg_type=post` with `zh_cn` rich-post content.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Unsupported or non-AI source material | Reject before model invocation with a stable reason. |
+| `ai` appears only inside another word, such as `maintainer` | Do not count it as the AI topic token. |
+| Missing evidence or wrong evidence class | Reject; do not create `signal_analyses`. |
+| GitHub README or referenced `SKILL.md` is missing | Treat the candidate as unusable; do not downgrade to catalog evidence. |
+| Reddit credentials are missing or OAuth has no access token | Fail the source run explicitly; do not fall back to `reddit.com/*.json` or `r/all`. |
+| One enabled collector exits non-zero or returns invalid JSON | Record that source as failed, continue later sources, and return an aggregate error after the round. |
+| A second schedule fires while any collection round is active | Skip the entire overlapping round without launching another Python process. |
+| Backend cannot bind its HTTP listener | Exit without starting the initial collector; never launch a child that cannot ingest. |
+| `INTERNAL_INGEST_SECRET` is empty | Do not register ingestion, collection schedules, or the initial collection round. |
+| Reddit allowlist contains `r/all`, duplicates, or invalid names | Drop forbidden/invalid values and deduplicate before any request. |
+| Daily count is already 30 | Return zero remaining and do not list candidates or call the model. |
+| Model returns invalid JSON, omits core fields, or changes `evidenceClass` | Return an error; do not mark the signal qualified. |
+| Digest analysis JSON is invalid | Return an error; do not send a partial digest. |
+| Feishu returns non-200 | Return an error so delivery can be retried and recorded. |
+
+### 5. Good / Base / Bad Cases
+
+- Good: a recent GitHub README with install/use evidence is analyzed once, marked qualified transactionally, and appears with its original link and concrete action.
+- Base: a recent SkillsMP catalog entry remains a rejected discovery lead until GitHub evidence is collected.
+- Base: a GitHub repository without README is omitted while other candidates can continue; it is not model-analyzed.
+- Base: Reddit is degraded because credentials are missing; WaytoAGI, SkillsMP, and GitHub still run and receive their own audit rows.
+- Good: a fresh backend binds its port, serves health/login, and immediately starts one source-config-driven collection round.
+- Base: model analysis is not configured; collected pending signals remain visible only under `最新采集（待分析）`.
+- Bad: sending pending/rejected items as “今日必读”, consuming a model call before qualification, or claiming first-person verification for third-party evidence.
+- Bad: marking the SkillsMP description as original evidence or silently using an unauthenticated Reddit scraper.
+
+### 6. Tests Required
+
+- Table-test qualification reasons, 30-day timestamps, evidence classes, and AI token boundaries.
+- Test quota exhaustion without store candidate reads or model calls; test successful analysis persistence fields and token usage.
+- Test analyzer prompts/structured response with a fake AI client; never call DeepSeek in default tests.
+- Test schedule next-runs from an Asia/Shanghai timestamp and digest caps/link preservation.
+- Test Feishu payload through an in-memory `http.RoundTripper`; do not bind ports or call a webhook.
+- Frontend render tests must assert rejected signals never enter outcome sections.
+- Frontend render tests must assert pending signals are visible in `最新采集（待分析）` while remaining absent from qualified outcome sections.
+- Collector contract tests must cover GitHub README/release decoding, SkillsMP-to-`SKILL.md` resolution, Reddit OAuth/allowlist/detail parsing, and authenticated ingestion without network access.
+- Runner tests must inject the process boundary and assert disabled-source skipping, Reddit allowlist arguments, per-source success/failure audit records, continuation after failure, and whole-round overlap prevention.
+- Live smoke tests are read-only and separate: WaytoAGI detail, SkillsMP GitHub detail, and a known public GitHub README/release. Reddit live success requires real approved OAuth credentials.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```go
+output, _ := model.AnalyzeSignal(ctx, signal, evidence) // spends quota before qualification
+notifier.Notify(ctx, signal.OriginalTitle)              // loses evidence and original link
+```
+
+#### Correct
+
+```go
+decision := radar.Qualify(signal, evidence, now)
+if decision.Eligible {
+    output, err := model.AnalyzeSignal(ctx, analyzer.SignalInput{/* ... */}, analyzer.EvidenceInput{/* ... */})
+    // Persist output plus qualification in one transaction, then build a capped rich digest.
+}
+```
+
+```python
+# Wrong: catalog text or all-site scraping becomes evidence.
+detail = EvidenceDetail(source_url=skill_url, evidence_class="original_documentation")
+client.get_json("https://www.reddit.com/r/all/new.json")
+
+# Correct: resolve primary documentation and require OAuth allowlist access.
+detail = github.fetch_detail(skillsmp_candidate)
+reddit = RedditCollector(client, client_id, client_secret, approved_communities)
+```
+
+```go
+// Wrong: separate cron entry locks can still overlap with each other.
+scheduler.AddFunc(regularSpec, runner.Run)
+scheduler.AddFunc(preDigestSpec, runner.Run)
+
+// Correct: CollectionRunner.Run owns a shared non-blocking round mutex and
+// each source result is recorded before processing continues.
+if !runner.runMu.TryLock() {
+    return nil
+}
+defer runner.runMu.Unlock()
+```
+
+```go
+// Wrong: start collection before the ingestion endpoint is listening.
+go collectionRunner.Run(context.Background())
+return r.Run(addr)
+
+// Correct: bind first, then collect asynchronously through the live endpoint.
+listener, err := net.Listen("tcp", addr)
+if err != nil { return err }
+go collectionRunner.Run(context.Background())
+return r.RunListener(listener)
+```

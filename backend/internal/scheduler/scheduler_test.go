@@ -5,6 +5,7 @@ package scheduler
 import (
 	"context"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,8 +23,8 @@ import (
 
 // fakeNotifier 测试用 channel：模拟通知计数，不真发邮件
 type fakeNotifier struct {
-	count  int32
-	last   string
+	count int32
+	last  string
 }
 
 func (f *fakeNotifier) Notify(ctx context.Context, payload any) error {
@@ -35,10 +36,13 @@ func (f *fakeNotifier) Notify(ctx context.Context, payload any) error {
 }
 
 func TestScheduler_RunKeywordJob(t *testing.T) {
+	if os.Getenv("RUN_LIVE_TESTS") != "1" {
+		t.Skip("set RUN_LIVE_TESTS=1 to run networked integration tests")
+	}
 	// 准备 DB
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "host=127.0.0.1 port=5432 user=tguser password=tgpass dbname=trend_graph sslmode=disable timezone=Asia/Shanghai"
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if !strings.Contains(dsn, "trend_graph_test") {
+		t.Skip("TEST_DATABASE_URL 必须指向专用 trend_graph_test 数据库")
 	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Warn)})
 	if err != nil {
@@ -48,9 +52,9 @@ func TestScheduler_RunKeywordJob(t *testing.T) {
 
 	// 准备 AI（可选，没 key 就跳过 AI）
 	var an *analyzer.Analyzer
-	if key := os.Getenv("DEEPSEEK_API_KEY"); key != "" {
-		cli := ai.NewDeepSeekClient(key, "")
-		an = analyzer.NewAnalyzer(cli, "deepseek-chat")
+	if key := os.Getenv("TEST_DEEPSEEK_API_KEY"); key != "" {
+		cli := ai.NewDeepSeekClient(key, os.Getenv("TEST_DEEPSEEK_BASE_URL"))
+		an = analyzer.NewAnalyzer(cli, "deepseek-v4-pro")
 	}
 
 	mc := crawler.NewMultiCrawler(
@@ -66,7 +70,7 @@ func TestScheduler_RunKeywordJob(t *testing.T) {
 	go wsHub.Run()
 
 	// 创建关键词记录（先硬删已有，避免唯一索引冲突）
-		db.Unscoped().Where("word = ?", "AI_ScheduleTest").Delete(&store.Keyword{})
+	db.Unscoped().Where("word = ?", "AI_ScheduleTest").Delete(&store.Keyword{})
 	k, err := keywordRepo.Create("AI_ScheduleTest", "scheduler 测试", 1440) // 1440=24小时一次
 	if err != nil {
 		t.Fatalf("create keyword 失败: %v", err)

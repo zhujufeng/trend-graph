@@ -18,7 +18,6 @@ const SOURCE_STYLES = {
   reddit: 'bg-orange-600/15 text-orange-500 border-orange-600/30',
   bing: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
   twitter: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
-  linuxdo: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
   zhihu: 'bg-blue-600/15 text-blue-500 border-blue-600/30',
 } as const
 

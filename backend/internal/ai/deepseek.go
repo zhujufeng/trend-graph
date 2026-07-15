@@ -40,10 +40,10 @@ type Message struct {
 // ChatRequest 是给 DeepSeek 的请求体。
 // 字段对齐 OpenAI /v1/chat/completions 协议。
 type ChatRequest struct {
-	Model       string    `json:"model"`              // 模型名，deepseek-chat / deepseek-reasoner
-	Messages    []Message `json:"messages"`           // 消息列表
+	Model       string    `json:"model"`                 // 模型名，例如 deepseek-v4-pro
+	Messages    []Message `json:"messages"`              // 消息列表
 	Temperature float64   `json:"temperature,omitempty"` // 温度，0 最确定，1 最发散
-	MaxTokens   int       `json:"max_tokens,omitempty"` // 回复最长 token 数
+	MaxTokens   int       `json:"max_tokens,omitempty"`  // 回复最长 token 数
 	// 让 AI 返回 JSON 用这个字段：
 	//   - "json_object" 强制返回 JSON（OpenAI/DeepSeek 都支持）
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
@@ -114,10 +114,10 @@ func NewDeepSeekClient(apiKey, baseURL string) *DeepSeekClient {
 // Chat 实现 Client 接口。
 //
 // 流程：
-//   1) 组装请求体 + 鉴权 Header
-//   2) POST /chat/completions
-//   3) 检查 HTTP 状态、解析 JSON
-//   4) 返回回复文本
+//  1. 组装请求体 + 鉴权 Header
+//  2. POST /chat/completions
+//  3. 检查 HTTP 状态、解析 JSON
+//  4. 返回回复文本
 func (c *DeepSeekClient) Chat(ctx context.Context, req ChatRequest) (string, *ChatResponse, error) {
 	// 1. 序列化请求体
 	body, err := json.Marshal(req)

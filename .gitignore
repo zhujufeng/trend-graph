@@ -57,3 +57,6 @@ backend/data/
 .coverage
 coverage.out
 vendor/
+.venv/
+__pycache__/
+*.py[cod]

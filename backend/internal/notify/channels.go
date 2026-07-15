@@ -75,11 +75,12 @@ func (e *EmailNotifier) Notify(ctx context.Context, payload any) error {
 // FeishuNotifier 飞书自定义机器人 Webhook
 type FeishuNotifier struct {
 	webhook string
+	client  *http.Client
 }
 
 // NewFeishuNotifier 构造
 func NewFeishuNotifier(webhook string) *FeishuNotifier {
-	return &FeishuNotifier{webhook: webhook}
+	return &FeishuNotifier{webhook: webhook, client: &http.Client{Timeout: 10 * time.Second}}
 }
 
 // feishuPayload 飞书机器人消息体（文本消息最简版本）
@@ -90,24 +91,76 @@ type feishuPayload struct {
 	} `json:"content"`
 }
 
+type FeishuPost struct {
+	Title    string
+	Sections []FeishuSection
+}
+
+type FeishuSection struct {
+	Text     string
+	LinkText string
+	LinkURL  string
+}
+
+type feishuPostPayload struct {
+	MsgType string `json:"msg_type"`
+	Content struct {
+		Post map[string]feishuPostLanguage `json:"post"`
+	} `json:"content"`
+}
+
+type feishuPostLanguage struct {
+	Title   string             `json:"title"`
+	Content [][]feishuPostItem `json:"content"`
+}
+
+type feishuPostItem struct {
+	Tag  string `json:"tag"`
+	Text string `json:"text"`
+	Href string `json:"href,omitempty"`
+}
+
 // Notify 发送飞书消息
 func (f *FeishuNotifier) Notify(ctx context.Context, payload any) error {
-	text, ok := payload.(string)
-	if !ok {
-		return fmt.Errorf("FeishuNotifier: payload 必须是 string")
-	}
 	if f.webhook == "" {
 		return fmt.Errorf("FeishuNotifier: webhook 未配置")
 	}
+	var body any
+	switch value := payload.(type) {
+	case string:
+		textBody := feishuPayload{MsgType: "text"}
+		textBody.Content.Text = value
+		body = textBody
+	case FeishuPost:
+		language := feishuPostLanguage{Title: value.Title, Content: make([][]feishuPostItem, 0, len(value.Sections))}
+		for _, section := range value.Sections {
+			row := []feishuPostItem{{Tag: "text", Text: section.Text}}
+			if section.LinkURL != "" {
+				row = append(row, feishuPostItem{Tag: "a", Text: section.LinkText, Href: section.LinkURL})
+			}
+			language.Content = append(language.Content, row)
+		}
+		postBody := feishuPostPayload{MsgType: "post"}
+		postBody.Content.Post = map[string]feishuPostLanguage{"zh_cn": language}
+		body = postBody
+	default:
+		return fmt.Errorf("FeishuNotifier: payload 必须是 string 或 FeishuPost")
+	}
 
-	body := feishuPayload{MsgType: "text"}
-	body.Content.Text = text
-
-	jsonBody, _ := json.Marshal(body)
-	req, _ := http.NewRequest("POST", f.webhook, bytes.NewReader(jsonBody))
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("编码飞书消息失败: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", f.webhook, bytes.NewReader(jsonBody))
+	if err != nil {
+		return fmt.Errorf("构造飞书请求失败: %w", err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := f.client
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("飞书 webhook 请求失败: %w", err)
@@ -145,9 +198,10 @@ type dingTalkPayload struct {
 // Notify 发送钉钉消息
 //
 // 钉钉签名算法：
-//   stringToSign = timestamp + "\n" + secret
-//   sign = base64(hmac_sha256(stringToSign, secret))
-//   url += &timestamp=xxx&sign=xxx
+//
+//	stringToSign = timestamp + "\n" + secret
+//	sign = base64(hmac_sha256(stringToSign, secret))
+//	url += &timestamp=xxx&sign=xxx
 func (d *DingTalkNotifier) Notify(ctx context.Context, payload any) error {
 	text, ok := payload.(string)
 	if !ok {

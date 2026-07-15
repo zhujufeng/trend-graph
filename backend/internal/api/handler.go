@@ -3,9 +3,9 @@
 // 阶段 3 改动：
 //   - Handler 多依赖一个 *analyzer.Analyzer
 //   - 路由新增:
-//       POST /api/expand           查询扩展
-//       POST /api/analyze/:id      对已入库的某一热点做 AI 分析
-//       POST /api/crawl?analyze=true  抓取后自动分析
+//     POST /api/expand           查询扩展
+//     POST /api/analyze/:id      对已入库的某一热点做 AI 分析
+//     POST /api/crawl?analyze=true  抓取后自动分析
 package api
 
 // 导入：
@@ -31,13 +31,13 @@ import (
 
 // Handler 是 API 控制器
 type Handler struct {
-	crawlers map[string]types.Crawler
-	hotRepo  *store.HotItemRepo
+	crawlers    map[string]types.Crawler
+	hotRepo     *store.HotItemRepo
 	keywordRepo *store.KeywordRepo
 	// 阶段 8 新增：图谱存储
 	graphRepo *store.GraphRepo
-	analyzer    *analyzer.Analyzer
-	wsHub *notify.WebSocketHub
+	analyzer  *analyzer.Analyzer
+	wsHub     *notify.WebSocketHub
 }
 
 // NewHandler 构造函数（参数继续扩展）
@@ -64,8 +64,7 @@ func NewHandler(
 }
 
 // Register 路由注册
-func (h *Handler) Register(r *gin.Engine) {
-	api := r.Group("/api")
+func (h *Handler) Register(api *gin.RouterGroup) {
 	{
 		api.GET("/hots", h.ListHots)
 		api.GET("/hots/:id", h.GetHot)
@@ -323,10 +322,10 @@ func (h *Handler) ExpandQuery(c *gin.Context) {
 // 对数据库中一条热点做 AI 综合分析，把摘要/相关性/真假/实体写回数据库。
 //
 // 流程：
-//   1) 查数据库拿原始热点
-//   2) 调 analyzer.AnalyzeHot 做 AI 分析
-//   3) 用 hotRepo.UpdateAIResult 写回 4 个字段
-//   4) 返回分析结果给前端
+//  1. 查数据库拿原始热点
+//  2. 调 analyzer.AnalyzeHot 做 AI 分析
+//  3. 用 hotRepo.UpdateAIResult 写回 4 个字段
+//  4. 返回分析结果给前端
 func (h *Handler) AnalyzeHot(c *gin.Context) {
 	if h.analyzer == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI 未配置"})
