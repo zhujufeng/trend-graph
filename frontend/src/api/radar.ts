@@ -24,6 +24,10 @@ export const listSourceConfigs = async (): Promise<SourceConfig[]> => {
   return response.data
 }
 
+export const updateSignalLifecycle = async (id: number, state: RadarSignal['lifecycleState']): Promise<void> => {
+  await client.patch(`/radar/signals/${id}/lifecycle`, { state })
+}
+
 export const updateSourceConfig = async (source: string, enabled: boolean): Promise<void> => {
   await client.put(`/source-configs/${source}`, { enabled })
 }

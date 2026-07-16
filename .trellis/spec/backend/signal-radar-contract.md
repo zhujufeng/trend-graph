@@ -22,6 +22,8 @@
 - `(*radar.DeliveryService).SendMajorAlerts(ctx, now) error`
 - `notify.FeishuNotifier.Notify(ctx, notify.FeishuPost) error`
 - Content API: `POST /api/radar/signals/:id/content-packages`, `GET|PUT /api/content-packages/:id`, `POST /api/content-packages/:id/approve`.
+- Practice API: `PATCH /api/radar/signals/:id/lifecycle` with `{state:"new"|"queued"|"practiced"|"dismissed"}`.
+- `(*store.SignalRepo).UpdateLifecycleState(id int64, state string) error` updates qualified radar signals only.
 - Collector command: `uv run --no-sync python -m signal_collector.cli --source {dev,github,reddit,bluesky}`; DEV/GitHub/Bluesky also require `--query`.
 - Runtime environment: `COLLECTOR_DIR` defaults to `../services/collector`; the Go runner supplies `BACKEND_URL` and `INTERNAL_INGEST_SECRET` directly to the child process.
 - Python seams: `search()` or `list_candidates()` returns `Candidate`; `fetch_detail(Candidate)` returns `EvidenceDetail`.
@@ -35,16 +37,19 @@
 - Recency is 30 days, preferring source update time, then publish time, then creation time.
 - DEV search splits a comma/whitespace-separated query into tags, deduplicates article IDs across tag results, and fetches `body_markdown` from the article-detail endpoint. Successful evidence is `documented_third_party_practice`.
 - GitHub search uses repository metadata; detail uses the JSON Contents API and decodes its Base64 `content`, then appends the latest release when present.
+- GitHub detail reuses the search candidate title and must not refetch repository metadata. One search plus README and release detail is at most `1 + 2N` GitHub API requests for `N` candidates.
 - GitHub requires `original_documentation` plus a usable setup/run indicator; Reddit and Bluesky require `community_discussion`.
 - Reddit requires `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET`, requests application-only OAuth, calls `oauth.reddit.com`, and only reads `REDDIT_COMMUNITIES` or the explicit `--communities` allowlist. `r/all` is forbidden at both configuration and collector boundaries.
 - Bluesky uses the public official AppView endpoints at `https://api.bsky.app/xrpc`: `app.bsky.feed.searchPosts` for discovery and `app.bsky.feed.getPostThread` for detail. The `public.api.bsky.app` alias is not used because it can be blocked by intermediary CDNs even when the official `api.bsky.app` endpoint succeeds.
 - `GITHUB_TOKEN` is optional; DEV and Bluesky require no key. A missing Reddit credential is a degraded-source error, never permission to scrape logged-out pages.
 - `DEEPSEEK_MODEL` defaults to `deepseek-v4-pro`; the daily Asia/Shanghai model-analysis quota is 30 newly analyzed signals.
 - Structured JSON preserves `evidenceClass` and includes facts with source URLs, `whatChanged`, audience, practical use, prerequisites, pain point, action, content opportunity, uncertainty, and alert decision.
+- Signal analysis sends at most 12,000 evidence runes (first 8,000 and last 4,000) so README setup and appended release notes survive without modifying stored evidence. Structured output allows 2,400 tokens and rejects `finish_reason=length` before JSON parsing.
 - GitHub analysis requires evidence-backed `toolType`, `compatibleClients`, and `installation`; never translate “universal” into an unsupported one-click claim.
 - `alertEligible=true` requires `alertReason` and exactly one category: `major_release`, `material_efficiency_gain`, `corroborated_pain_point`, or `source_backed_content_opportunity`.
 - Schedules use Asia/Shanghai: collection `0 */3 * * *`, pre-digest refresh `40 7,17 * * *`, digest `0 8,18 * * *`.
 - Go owns scheduling and source health; Python owns source-specific collection and authenticated ingestion. Disabled sources never start a process.
+- A successful collector command writes exactly one JSON object to stdout, including `failed` and `failures` for skipped candidates. Partial-failure diagnostics must not use stderr because Go reads child output with `CombinedOutput`; if every shortlisted candidate fails, the command exits non-zero.
 - A failed source records a failed `collection_runs` row and updates `source_configs.last_failure`, but does not prevent later enabled sources from running. Success updates `last_success_at` and clears `last_failure` in the same transaction as its audit row.
 - The collection runner must prevent overlapping whole rounds. Cron wrappers alone are insufficient because the regular and pre-digest entries have separate overlap locks.
 - When collection is configured, backend startup binds the HTTP listener first and then starts one asynchronous collection round. This guarantees the Python child can call the internal ingestion route; scheduled rounds remain unchanged.
@@ -53,6 +58,7 @@
 - Digest delivery uses one idempotency key per Shanghai date/hour. Major alerts use one key per signal and are capped at three successful sends per Shanghai day. Failed sends and stale `running` deliveries older than 15 minutes are retryable.
 - `DIGEST_ENABLED` and `MAJOR_ALERTS_ENABLED` independently disable those jobs without deleting stored history.
 - Content generation is user-triggered only. It freezes `evidenceSnapshotId`, stores separate strategy/Xiaohongshu/WeChat/X/visual JSON artifacts, and never renders images or publishes externally.
+- Practice state reuses `signals.lifecycle_state`: `new` is untriaged, `queued` is selected for practice, `practiced` is user-confirmed, and `dismissed` is hidden. Content creation requires both `qualification=qualified` and `lifecycle_state=practiced`.
 - Each platform keeps server-supplied source links; X has separate Chinese and English drafts. Non-`user_verified` packages reject generated or edited first-person test claims.
 - Approval saves the latest edits before setting `status=approved`; approved packages are immutable through the edit endpoint.
 
@@ -75,11 +81,17 @@
 | Reddit allowlist contains `r/all`, duplicates, or invalid names | Drop forbidden/invalid values and deduplicate before any request. |
 | Daily count is already 30 | Return zero remaining and do not list candidates or call the model. |
 | Model returns invalid JSON, omits core fields, or changes `evidenceClass` | Return an error; do not mark the signal qualified. |
+| Model returns `finish_reason=length` | Return a truncation error before parsing; leave the signal pending. |
+| One shortlisted collector candidate fails detail fetch or ingestion | Continue later candidates and report the failure inside the final JSON object. |
+| Every shortlisted collector candidate fails | Exit non-zero so the source health row records a failure. |
 | Digest analysis JSON is invalid | Return an error; do not send a partial digest. |
 | Feishu returns non-200 | Return an error so delivery can be retried and recorded. |
 | Feishu returns HTTP 200 with non-zero business `code` | Treat it as failure and record a retryable delivery. |
 | Alert lacks a supported category or reason | Reject the model output; do not send. |
 | Content creation targets pending/rejected/missing-evidence signal | Return HTTP 409 without calling the model. |
+| Lifecycle payload has an unsupported state | Return HTTP 400 without updating the signal. |
+| Lifecycle target is pending, rejected, retired, or missing | Return HTTP 404 without updating it. |
+| Content creation targets a qualified but unpracticed signal | Return HTTP 409 without calling the model. |
 | Content edit removes source links or adds first-person testing to third-party evidence | Return HTTP 400 and keep the stored draft. |
 | Default `go test ./...` reaches a live source | Gate the misclassified test behind `RUN_LIVE_TESTS=1`. |
 
@@ -89,10 +101,12 @@
 - Good: a recent DEV implementation article is shortlisted by tag, its full Markdown body is preserved, and it is labeled documented third-party practice.
 - Good: a recent Bluesky post preserves its original profile/post URL and thread context while remaining community discussion.
 - Base: a GitHub repository without README is omitted while other candidates can continue; it is not model-analyzed.
+- Base: one GitHub candidate fails while another succeeds; stdout remains valid JSON and the source round succeeds with `failed=1`.
 - Base: Reddit is degraded because credentials are missing; DEV, GitHub, and Bluesky still run and receive their own audit rows.
 - Base: historical WaytoAGI/SkillsMP signals remain in PostgreSQL but disappear from every current product query.
 - Good: a fresh backend binds its port, serves health/login, and immediately starts one source-config-driven collection round.
 - Good: the user selects one qualified signal, edits three platform drafts and image prompts, saves, then explicitly approves it.
+- Good: a qualified signal moves from `new` to `queued` to `practiced`, survives refresh, and only then exposes content generation.
 - Good: a failed 08:00 webhook attempt is recorded and can retry without duplicating a successful digest.
 - Base: model analysis is not configured; collected pending signals remain visible only under `最新采集（待分析）`.
 - Bad: sending pending/rejected items as “今日必读”, consuming a model call before qualification, or claiming first-person verification for third-party evidence.
@@ -104,13 +118,17 @@
 - Table-test qualification reasons, 30-day timestamps, evidence classes, and AI token boundaries.
 - Test quota exhaustion without store candidate reads or model calls; test successful analysis persistence fields and token usage.
 - Test analyzer prompts/structured response with a fake AI client; never call DeepSeek in default tests.
+- Test over-limit multibyte evidence preserves both ends, uses the bounded prompt, and rejects a fake `finish_reason=length` response.
 - Test schedule next-runs from an Asia/Shanghai timestamp and digest caps/link preservation.
 - Test Feishu payload through an in-memory `http.RoundTripper`; do not bind ports or call a webhook.
 - Test HTTP-200 Feishu business errors, digest idempotency, the three-alert cap, and explicit alert categories.
 - Test content creation requires qualified frozen evidence, links survive every platform payload, and third-party evidence cannot become first-person testing.
+- Test lifecycle state validation and qualified-only persistence; test that queued content creation returns conflict while practiced creation succeeds.
+- Test that the radar list response keeps evidence provenance but never serializes `excerpt`; list queries must select only evidence metadata while single-signal reads retain the frozen body.
 - Frontend render tests must assert rejected signals never enter outcome sections.
 - Frontend render tests must assert pending signals are visible in `最新采集（待分析）` while remaining absent from qualified outcome sections.
 - Collector contract tests must cover DEV tag deduplication/full-body detail, GitHub README/release decoding, Reddit OAuth/allowlist/detail parsing, Bluesky search/thread parsing, author preservation, and authenticated ingestion without network access.
+- GitHub tests must assert no redundant repository metadata request; CLI tests must assert one failed candidate does not block the next, successful stdout remains parseable JSON, and all-candidate failure is non-zero.
 - Runner tests must inject the process boundary and assert disabled-source skipping, Reddit allowlist arguments, per-source success/failure audit records, continuation after failure, and whole-round overlap prevention.
 - Store/API tests must assert that retired-source rows cannot enter dashboard, analysis, delivery, or content generation.
 - Live smoke tests are read-only and separate: a current DEV article body, a known public GitHub README/release, and a current Bluesky thread. Reddit live success requires real eligible OAuth credentials.
@@ -146,6 +164,14 @@ thread = bluesky.fetch_detail(bluesky_candidate)
 reddit = RedditCollector(client, client_id, client_secret, approved_communities)
 ```
 
+```python
+# Wrong: stderr corrupts the successful JSON read through CombinedOutput.
+print(f"skipped: {exc}", file=sys.stderr)
+
+# Correct: partial failures stay in the single stdout JSON payload.
+print(json.dumps({"created": created, "failed": failed, "failures": failures}))
+```
+
 ```go
 // Wrong: separate cron entry locks can still overlap with each other.
 scheduler.AddFunc(regularSpec, runner.Run)
@@ -157,6 +183,23 @@ if !runner.runMu.TryLock() {
     return nil
 }
 defer runner.runMu.Unlock()
+```
+
+```go
+// Wrong: qualification alone bypasses the user's practice step.
+if signal.Qualification == "qualified" { generateContent() }
+
+// Correct: content generation follows explicit personal practice.
+if signal.Qualification == "qualified" && signal.LifecycleState == "practiced" { generateContent() }
+```
+
+```go
+// Wrong: the dashboard pays to load and serialize source documents it never displays.
+db.First(&evidence)
+response.Evidence = &evidence
+
+// Correct: lists select provenance metadata; full evidence is read only for one signal's analysis/content flow.
+db.Select("id", "signal_id", "source_url", "evidence_class", "title", "captured_at").First(&evidence)
 ```
 
 ```go

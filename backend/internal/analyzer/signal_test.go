@@ -67,6 +67,31 @@ func TestAnalyzeSignalRejectsAlertWithoutExplicitCategory(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSignalBoundsEvidenceAndRejectsTruncatedOutput(t *testing.T) {
+	client := &captureAIClient{content: `{"evidenceClass":"original_documentation"`}
+	client.response.Choices = append(client.response.Choices, struct {
+		Message      ai.Message `json:"message"`
+		FinishReason string     `json:"finish_reason"`
+	}{FinishReason: "length"})
+	analyzer := NewAnalyzer(client, "deepseek-v4-pro")
+	excerpt := "BEGIN\n" + strings.Repeat("中", 20_000) + "\nEND"
+
+	_, err := analyzer.AnalyzeSignal(context.Background(),
+		SignalInput{OriginalTitle: "Large evidence", OriginalURL: "https://example.com/release"},
+		EvidenceInput{SourceURL: "https://example.com/docs", EvidenceClass: "original_documentation", Excerpt: excerpt},
+	)
+	if err == nil || !strings.Contains(err.Error(), "truncated") {
+		t.Fatalf("error = %v", err)
+	}
+	userPrompt := client.request.Messages[len(client.request.Messages)-1].Content
+	if !strings.Contains(userPrompt, "BEGIN") || !strings.Contains(userPrompt, "END") || !strings.Contains(userPrompt, "证据正文已截断") {
+		t.Fatalf("bounded prompt did not preserve both ends")
+	}
+	if client.request.MaxTokens < 2_000 {
+		t.Fatalf("max tokens = %d", client.request.MaxTokens)
+	}
+}
+
 type captureAIClient struct {
 	content  string
 	request  ai.ChatRequest

@@ -78,19 +78,29 @@ export interface EvidenceSnapshot {
   sourceUrl: string
   evidenceClass: string
   title?: string
-  excerpt: string
-  contentHash: string
+  excerpt?: string
+  contentHash?: string
   capturedAt: string
-  createdAt: string
+  createdAt?: string
 }
 
 export interface SignalAnalysis {
+  evidenceClass?: string
+  facts?: Array<{ claim: string; sourceUrl: string }>
   whatChanged?: string
+  audience?: string
+  practicalUse?: string
+  prerequisites?: string
   action?: string
+  painPoint?: string
   contentOpportunity?: string
   toolType?: string
   compatibleClients?: string[]
   installation?: string
+  uncertainty?: string
+  alertEligible?: boolean
+  alertCategory?: string
+  alertReason?: string
   [key: string]: unknown
 }
 

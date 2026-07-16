@@ -55,6 +55,7 @@ describe('RadarDashboard', () => {
         onLogout={vi.fn()}
         onSourceChange={vi.fn()}
         onRedditCommunitiesChange={vi.fn()}
+        onLifecycleChange={vi.fn()}
         contentPackage={null}
         onGenerateContent={vi.fn()}
         onSaveContent={vi.fn()}
@@ -62,10 +63,8 @@ describe('RadarDashboard', () => {
       />,
     )
 
-    expect(html).toContain('AI 信号雷达')
-    expect(html).toContain('今日必读')
-    expect(html).toContain('可用工具与 Skill')
-    expect(html).toContain('内容素材')
+    expect(html).toContain('AI 实践雷达')
+    expect(html).toContain('待实践')
     expect(html).toContain('MCP Inspector')
     expect(html).toContain('https://github.com/owner/repo')
     expect(html).toContain('用测试服务器复现')
@@ -74,7 +73,8 @@ describe('RadarDashboard', () => {
     expect(html).toContain('Reddit 社区白名单')
     expect(html).toContain('r/claudeai, r/cursor')
     expect(html).toContain('保存白名单')
-    expect(html).toContain('生成三平台内容包')
+    expect(html).toContain('加入实践')
+    expect(html).not.toContain('生成三平台内容包')
   })
 
   it('keeps rejected signals out of outcome sections', () => {
@@ -100,6 +100,7 @@ describe('RadarDashboard', () => {
         onLogout={vi.fn()}
         onSourceChange={vi.fn()}
         onRedditCommunitiesChange={vi.fn()}
+        onLifecycleChange={vi.fn()}
         contentPackage={null}
         onGenerateContent={vi.fn()}
         onSaveContent={vi.fn()}
@@ -108,7 +109,7 @@ describe('RadarDashboard', () => {
     )
 
     expect(html).not.toContain(rejected.title)
-    expect(html).toContain('暂时没有新信号')
+    expect(html).toContain('当前没有值得实践的新信号')
   })
 
   it('shows newly collected signals while they wait for analysis', () => {
@@ -133,6 +134,7 @@ describe('RadarDashboard', () => {
         onLogout={vi.fn()}
         onSourceChange={vi.fn()}
         onRedditCommunitiesChange={vi.fn()}
+        onLifecycleChange={vi.fn()}
         contentPackage={null}
         onGenerateContent={vi.fn()}
         onSaveContent={vi.fn()}
@@ -140,10 +142,53 @@ describe('RadarDashboard', () => {
       />,
     )
 
-    expect(html).toContain('最新采集')
+    expect(html).toContain('采集队列')
     expect(html).toContain(pending.title)
     expect(html).toContain(pending.originalUrl)
     expect(html).toContain('待分析')
+  })
+
+  it('does not render raw pending evidence and only offers content generation after practice', () => {
+    const rawEvidence = 'RAW-README-SHOULD-NOT-RENDER'
+    const pending: RadarSignal = {
+      id: 9,
+      source: 'github',
+      title: '待分析项目',
+      originalUrl: 'https://github.com/example/pending',
+      score: 1,
+      qualification: 'pending',
+      lifecycleState: 'new',
+      createdAt: '2026-07-15T08:00:00Z',
+      evidence: { id: 9, signalId: 9, sourceUrl: 'https://github.com/example/pending', evidenceClass: 'original_documentation', excerpt: rawEvidence, contentHash: 'hash', capturedAt: '2026-07-15T08:00:00Z', createdAt: '2026-07-15T08:00:00Z' },
+    }
+    const practiced: RadarSignal = {
+      ...pending,
+      id: 10,
+      title: '已实践项目',
+      qualification: 'qualified',
+      lifecycleState: 'practiced',
+      analysis: { whatChanged: '新增流程', action: '本地运行' },
+    }
+    const html = renderToStaticMarkup(
+      <RadarDashboard
+        signals={[pending, practiced]}
+        sources={[]}
+        loading={false}
+        error=""
+        onRefresh={vi.fn()}
+        onLogout={vi.fn()}
+        onSourceChange={vi.fn()}
+        onRedditCommunitiesChange={vi.fn()}
+        onLifecycleChange={vi.fn()}
+        contentPackage={null}
+        onGenerateContent={vi.fn()}
+        onSaveContent={vi.fn()}
+        onApproveContent={vi.fn()}
+      />,
+    )
+    expect(html).not.toContain(rawEvidence)
+    expect(html).toContain('已实践，可创作')
+    expect((html.match(/生成三平台内容包/g) ?? []).length).toBe(1)
   })
 
   it('renders editable three-platform drafts with evidence links', () => {
@@ -157,6 +202,7 @@ describe('RadarDashboard', () => {
         onLogout={vi.fn()}
         onSourceChange={vi.fn()}
         onRedditCommunitiesChange={vi.fn()}
+        onLifecycleChange={vi.fn()}
         onGenerateContent={vi.fn()}
         onSaveContent={vi.fn()}
         onApproveContent={vi.fn()}

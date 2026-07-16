@@ -17,7 +17,7 @@ import (
 func TestContentPackageRequiresQualifiedEvidenceAndPersistsGeneratedDraft(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &fakeContentPackageStore{signal: store.RadarSignal{
-		Signal:   store.Signal{ID: 7, OriginalTitle: "Agent Workflow", OriginalURL: "https://example.com/release", Qualification: "qualified"},
+		Signal:   store.Signal{ID: 7, OriginalTitle: "Agent Workflow", OriginalURL: "https://example.com/release", Qualification: "qualified", LifecycleState: "practiced"},
 		Evidence: &store.EvidenceSnapshot{ID: 8, SourceURL: "https://example.com/docs", EvidenceClass: "original_documentation", Excerpt: "Install then run."},
 		Analysis: &store.SignalAnalysis{AnalysisJSON: `{"action":"复现"}`},
 	}}
@@ -35,6 +35,13 @@ func TestContentPackageRequiresQualifiedEvidenceAndPersistsGeneratedDraft(t *tes
 	}
 	if !json.Valid([]byte(repo.content.XJSON)) || !json.Valid([]byte(repo.content.VisualPlanJSON)) {
 		t.Fatalf("stored JSON is invalid: %#v", repo.content)
+	}
+
+	repo.signal.Signal.LifecycleState = "queued"
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/radar/signals/7/content-packages", nil))
+	if response.Code != http.StatusConflict {
+		t.Fatalf("unpracticed status = %d", response.Code)
 	}
 
 	repo.signal.Signal.Qualification = "pending"

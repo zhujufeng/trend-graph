@@ -9,6 +9,7 @@ import {
   login,
   logout,
   updateRedditCommunities,
+  updateSignalLifecycle,
   updateContentPackage,
   updateSourceConfig,
 } from './api/radar'
@@ -101,6 +102,16 @@ export function App() {
     }
   }
 
+  const handleLifecycleChange = async (signalId: number, lifecycleState: string) => {
+    setError('')
+    try {
+      await updateSignalLifecycle(signalId, lifecycleState)
+      setSignals((current) => current.map((signal) => signal.id === signalId ? { ...signal, lifecycleState } : signal))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
   const handleSaveContent = async (content: ContentPackage) => {
     setLoading(true)
     setError('')
@@ -143,6 +154,7 @@ export function App() {
       onLogout={handleLogout}
       onSourceChange={handleSourceChange}
       onRedditCommunitiesChange={handleRedditCommunitiesChange}
+      onLifecycleChange={handleLifecycleChange}
       contentPackage={contentPackage}
       onGenerateContent={handleGenerateContent}
       onSaveContent={handleSaveContent}

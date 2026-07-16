@@ -64,11 +64,21 @@ def main() -> None:
         parser.error("INTERNAL_INGEST_SECRET is required with --ingest")
     backend = BackendIngestionClient(backend_url, secret, client)
     created = 0
+    failed = 0
+    processed = 0
+    failures: list[str] = []
     shortlisted = shortlist(candidates)
     for candidate in shortlisted:
-        if backend.ingest(candidate, collector.fetch_detail(candidate)):
-            created += 1
-    print(json.dumps({"collected": len(candidates), "shortlisted": len(shortlisted), "created": created}, ensure_ascii=False))
+        try:
+            if backend.ingest(candidate, collector.fetch_detail(candidate)):
+                created += 1
+            processed += 1
+        except Exception as exc:
+            failed += 1
+            failures.append(f"{candidate.source_id}: {exc}")
+    if shortlisted and processed == 0:
+        raise RuntimeError(f"all shortlisted candidates failed: {'; '.join(failures)}")
+    print(json.dumps({"collected": len(candidates), "shortlisted": len(shortlisted), "created": created, "failed": failed, "failures": failures}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

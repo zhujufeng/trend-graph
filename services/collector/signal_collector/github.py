@@ -51,7 +51,6 @@ class GitHubCollector:
 
     def fetch_detail(self, candidate: Candidate) -> EvidenceDetail:
         repo, document_url = _repository_and_document(candidate.url)
-        metadata = self.client.get_json(f"{self.api_url}/repos/{repo}", self.headers)
         document_payload = self.client.get_json(document_url, self.headers)
         content = document_payload.get("content") if isinstance(document_payload, dict) else None
         try:
@@ -71,7 +70,7 @@ class GitHubCollector:
             source=candidate.source,
             source_id=candidate.source_id,
             source_url=candidate.url,
-            title=str(metadata.get("full_name") or candidate.title),
+            title=candidate.title,
             excerpt=excerpt,
             evidence_class="original_documentation",
             requires_github_verification=False,

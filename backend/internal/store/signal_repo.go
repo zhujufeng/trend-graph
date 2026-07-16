@@ -48,7 +48,7 @@ func (r *SignalRepo) ListRadarSignals(limit int) ([]RadarSignal, error) {
 	// replace with batched lookups only if measurements show it matters.
 	result := make([]RadarSignal, 0, len(signals))
 	for _, signal := range signals {
-		item, err := r.loadRadarSignal(signal)
+		item, err := r.loadRadarSignal(signal, false)
 		if err != nil {
 			return nil, err
 		}
@@ -62,13 +62,17 @@ func (r *SignalRepo) GetRadarSignal(id int64) (RadarSignal, error) {
 	if err := activeRadarSignals(r.db).First(&signal, id).Error; err != nil {
 		return RadarSignal{}, err
 	}
-	return r.loadRadarSignal(signal)
+	return r.loadRadarSignal(signal, true)
 }
 
-func (r *SignalRepo) loadRadarSignal(signal Signal) (RadarSignal, error) {
+func (r *SignalRepo) loadRadarSignal(signal Signal, includeEvidenceBody bool) (RadarSignal, error) {
 	item := RadarSignal{Signal: signal}
 	var evidence EvidenceSnapshot
-	if err := r.db.Where("signal_id = ?", signal.ID).Order("captured_at DESC").First(&evidence).Error; err == nil {
+	evidenceQuery := r.db.Where("signal_id = ?", signal.ID).Order("captured_at DESC")
+	if !includeEvidenceBody {
+		evidenceQuery = evidenceQuery.Select("id", "signal_id", "source_url", "evidence_class", "title", "captured_at")
+	}
+	if err := evidenceQuery.First(&evidence).Error; err == nil {
 		item.Evidence = &evidence
 	} else if err != gorm.ErrRecordNotFound {
 		return RadarSignal{}, err
@@ -115,6 +119,19 @@ func (r *SignalRepo) SetQualification(id int64, qualification, reason string) er
 	return r.db.Model(&Signal{}).Where("id = ?", id).Updates(map[string]any{
 		"qualification": qualification, "qualification_reason": reason,
 	}).Error
+}
+
+func (r *SignalRepo) UpdateLifecycleState(id int64, state string) error {
+	result := activeRadarSignals(r.db).Model(&Signal{}).
+		Where("id = ? AND qualification = ?", id, "qualified").
+		Update("lifecycle_state", state)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *SignalRepo) SaveQualifiedAnalysis(analysis SignalAnalysis, reason string) error {

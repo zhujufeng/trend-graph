@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -45,8 +46,8 @@ func TestRadarSignalsAPIReturnsEvidenceAndStructuredAnalysis(t *testing.T) {
 			Title         string `json:"title"`
 			Qualification string `json:"qualification"`
 			Evidence      struct {
+				SourceURL     string `json:"sourceUrl"`
 				EvidenceClass string `json:"evidenceClass"`
-				Excerpt       string `json:"excerpt"`
 			} `json:"evidence"`
 			Analysis struct {
 				WhatChanged string `json:"whatChanged"`
@@ -65,18 +66,51 @@ func TestRadarSignalsAPIReturnsEvidenceAndStructuredAnalysis(t *testing.T) {
 	if item.ID != 7 || item.Title != "MCP Inspector" || item.Qualification != "qualified" {
 		t.Fatalf("item = %#v", item)
 	}
-	if item.Evidence.EvidenceClass != "original_documentation" || item.Evidence.Excerpt == "" {
+	if item.Evidence.EvidenceClass != "original_documentation" || item.Evidence.SourceURL == "" {
 		t.Fatalf("evidence = %#v", item.Evidence)
+	}
+	if bytes.Contains(response.Body.Bytes(), []byte(`"excerpt"`)) {
+		t.Fatalf("dashboard response leaked full evidence excerpt: %s", response.Body.String())
 	}
 	if item.Analysis.WhatChanged != "新增 MCP 检查流程" || item.Analysis.Action != "用测试服务器复现" {
 		t.Fatalf("analysis = %#v", item.Analysis)
 	}
 }
 
+func TestRadarSignalLifecycleAcceptsOnlyQualifiedWorkflowStates(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &fakeRadarStore{}
+	router := gin.New()
+	NewRadarHandler(repo).Register(router.Group("/api"))
+
+	request := httptest.NewRequest(http.MethodPatch, "/api/radar/signals/7/lifecycle", bytes.NewBufferString(`{"state":"queued"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || repo.updatedID != 7 || repo.updatedState != "queued" {
+		t.Fatalf("status=%d id=%d state=%q body=%s", response.Code, repo.updatedID, repo.updatedState, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodPatch, "/api/radar/signals/7/lifecycle", bytes.NewBufferString(`{"state":"published"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid state status = %d", response.Code)
+	}
+}
+
 type fakeRadarStore struct {
-	signals []store.RadarSignal
+	signals      []store.RadarSignal
+	updatedID    int64
+	updatedState string
 }
 
 func (s *fakeRadarStore) ListRadarSignals(limit int) ([]store.RadarSignal, error) {
 	return s.signals, nil
+}
+
+func (s *fakeRadarStore) UpdateLifecycleState(id int64, state string) error {
+	s.updatedID, s.updatedState = id, state
+	return nil
 }
