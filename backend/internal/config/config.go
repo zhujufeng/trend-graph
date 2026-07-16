@@ -44,14 +44,15 @@ type Config struct {
 	DeepSeekBaseURL string
 
 	// 单管理员私有访问配置。密码只保存在服务端环境变量。
-	AdminPassword        string
-	AdminSessionHours    int
-	SessionCookieSecure  bool
-	InternalIngestSecret string
-	GitHubToken          string
-	RedditClientID       string
-	RedditClientSecret   string
-	CollectorDir         string
+	AdminPassword         string
+	AdminSessionHours     int
+	SessionCookieSecure   bool
+	InternalIngestSecret  string
+	GitHubToken           string
+	RedditClientID        string
+	RedditClientSecret    string
+	CollectorDir          string
+	BackgroundJobsEnabled bool
 
 	// 阶段 7 通知渠道配置
 	// 任何一项留空就跳过对应渠道
@@ -84,19 +85,20 @@ func Load() *Config {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		Port:                 getEnv("PORT", "8080"),
-		DatabaseURL:          getEnv("DATABASE_URL", ""),
-		DeepSeekAPIKey:       getEnv("DEEPSEEK_API_KEY", ""),
-		DeepSeekModel:        getEnv("DEEPSEEK_MODEL", "deepseek-v4-pro"),
-		DeepSeekBaseURL:      getEnv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-		AdminPassword:        getEnv("ADMIN_PASSWORD", ""),
-		AdminSessionHours:    getEnvInt("ADMIN_SESSION_HOURS", 168),
-		SessionCookieSecure:  getEnvBool("SESSION_COOKIE_SECURE", true),
-		InternalIngestSecret: getEnv("INTERNAL_INGEST_SECRET", ""),
-		GitHubToken:          getEnv("GITHUB_TOKEN", ""),
-		RedditClientID:       getEnv("REDDIT_CLIENT_ID", ""),
-		RedditClientSecret:   getEnv("REDDIT_CLIENT_SECRET", ""),
-		CollectorDir:         getEnv("COLLECTOR_DIR", "../services/collector"),
+		Port:                  getEnv("PORT", "8080"),
+		DatabaseURL:           getEnv("DATABASE_URL", ""),
+		DeepSeekAPIKey:        getEnv("DEEPSEEK_API_KEY", ""),
+		DeepSeekModel:         getEnv("DEEPSEEK_MODEL", "deepseek-v4-pro"),
+		DeepSeekBaseURL:       getEnv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+		AdminPassword:         getEnv("ADMIN_PASSWORD", ""),
+		AdminSessionHours:     getEnvInt("ADMIN_SESSION_HOURS", 168),
+		SessionCookieSecure:   getEnvBool("SESSION_COOKIE_SECURE", true),
+		InternalIngestSecret:  getEnv("INTERNAL_INGEST_SECRET", ""),
+		GitHubToken:           getEnv("GITHUB_TOKEN", ""),
+		RedditClientID:        getEnv("REDDIT_CLIENT_ID", ""),
+		RedditClientSecret:    getEnv("REDDIT_CLIENT_SECRET", ""),
+		CollectorDir:          getEnv("COLLECTOR_DIR", "../services/collector"),
+		BackgroundJobsEnabled: getEnvBool("BACKGROUND_JOBS_ENABLED", true),
 
 		// 阶段 7 通知配置
 		SMTPHost:           getEnv("SMTP_HOST", ""),

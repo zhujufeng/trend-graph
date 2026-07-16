@@ -128,7 +128,7 @@ func main() {
 
 	schedulerCount := 0
 	var collectionRunner *radar.CollectionRunner
-	if cfg.InternalIngestSecret != "" {
+	if cfg.BackgroundJobsEnabled && cfg.InternalIngestSecret != "" {
 		collectionRunner = radar.NewCollectionRunner(
 			sourceConfigRepo,
 			cfg.CollectorDir,
@@ -149,7 +149,7 @@ func main() {
 		schedulerCount = len(collectionCron.Entries())
 		fmt.Printf("采集调度已启用: %d 条计划\n", schedulerCount)
 	}
-	if deliveryService != nil && cfg.DigestEnabled {
+	if cfg.BackgroundJobsEnabled && deliveryService != nil && cfg.DigestEnabled {
 		digestCron, err := radar.NewDigestCron(func() {
 			if err := deliveryService.SendDigest(context.Background(), time.Now()); err != nil {
 				log.Printf("飞书摘要发送失败: %v", err)
@@ -190,7 +190,11 @@ func main() {
 	handler.Register(privateAPI)
 	api.NewSourceConfigHandler(sourceConfigRepo).Register(privateAPI)
 	api.NewRadarHandler(signalRepo).Register(privateAPI)
-	api.NewContentPackageHandler(signalRepo, an).Register(privateAPI)
+	contentHandler := api.NewContentPackageHandler(signalRepo, nil)
+	if an != nil {
+		contentHandler = api.NewContentPackageHandler(signalRepo, an)
+	}
+	contentHandler.Register(privateAPI)
 
 	// WS 路由（不走 /api 前缀）
 	r.GET("/ws", authService.Require(), func(c *gin.Context) {
@@ -220,7 +224,7 @@ func main() {
 			runAnalysisAndAlerts()
 			log.Println("首次采集与分析完成")
 		}()
-	} else if analysisRunner != nil {
+	} else if cfg.BackgroundJobsEnabled && analysisRunner != nil {
 		go runAnalysisAndAlerts()
 	}
 	if err := r.RunListener(listener); err != nil {

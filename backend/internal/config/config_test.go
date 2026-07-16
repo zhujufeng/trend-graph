@@ -10,6 +10,7 @@ func TestLoadUsesPrivateDefaults(t *testing.T) {
 	t.Setenv("ADMIN_SESSION_HOURS", "")
 	t.Setenv("SESSION_COOKIE_SECURE", "")
 	t.Setenv("COLLECTOR_DIR", "")
+	t.Setenv("BACKGROUND_JOBS_ENABLED", "")
 
 	cfg := Load()
 	if cfg.DeepSeekModel != "deepseek-v4-pro" {
@@ -26,5 +27,18 @@ func TestLoadUsesPrivateDefaults(t *testing.T) {
 	}
 	if !cfg.DigestEnabled || !cfg.MajorAlertsEnabled {
 		t.Fatalf("delivery defaults disabled: %#v", cfg)
+	}
+	if !cfg.BackgroundJobsEnabled {
+		t.Fatalf("background jobs default disabled: %#v", cfg)
+	}
+}
+
+func TestLoadCanDisableBackgroundJobs(t *testing.T) {
+	t.Setenv("DATABASE_URL", "host=localhost dbname=trend_graph_test")
+	t.Setenv("ADMIN_PASSWORD", "test-password")
+	t.Setenv("BACKGROUND_JOBS_ENABLED", "false")
+
+	if Load().BackgroundJobsEnabled {
+		t.Fatal("background jobs should be disabled")
 	}
 }

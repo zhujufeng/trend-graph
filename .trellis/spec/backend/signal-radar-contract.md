@@ -26,6 +26,7 @@
 - `(*store.SignalRepo).UpdateLifecycleState(id int64, state string) error` updates qualified radar signals only.
 - Collector command: `uv run --no-sync python -m signal_collector.cli --source {dev,github,reddit,bluesky}`; DEV/GitHub/Bluesky also require `--query`.
 - Runtime environment: `COLLECTOR_DIR` defaults to `../services/collector`; the Go runner supplies `BACKEND_URL` and `INTERNAL_INGEST_SECRET` directly to the child process.
+- Runtime environment: `BACKGROUND_JOBS_ENABLED` defaults to `true`. When `false`, the server still loads DeepSeek and serves user-triggered content generation, but creates no collection/digest cron and runs no initial collection or pending analysis.
 - Python seams: `search()` or `list_candidates()` returns `Candidate`; `fetch_detail(Candidate)` returns `EvidenceDetail`.
 - Python deterministic shortlist: `qualification.shortlist(candidates, now)` runs before detail fetch and ingestion.
 - DB transition: `signals.qualification=pending -> qualified|rejected`; qualified writes `signal_analyses` and the signal state in one transaction.
@@ -58,6 +59,8 @@
 - Digest delivery uses one idempotency key per Shanghai date/hour. Major alerts use one key per signal and are capped at three successful sends per Shanghai day. Failed sends and stale `running` deliveries older than 15 minutes are retryable.
 - `DIGEST_ENABLED` and `MAJOR_ALERTS_ENABLED` independently disable those jobs without deleting stored history.
 - Content generation is user-triggered only. It freezes `evidenceSnapshotId`, stores separate strategy/Xiaohongshu/WeChat/X/visual JSON artifacts, and never renders images or publishes externally.
+- Optional model wiring must pass a true nil interface when DeepSeek is absent. A typed nil `*analyzer.Analyzer` inside `contentPackageGenerator` is non-nil and will panic when invoked.
+- `BACKGROUND_JOBS_ENABLED=false` does not disable authentication, the internal ingestion route, or content APIs; it disables only automatic collection, batch analysis, alerts, and digest schedules.
 - Practice state reuses `signals.lifecycle_state`: `new` is untriaged, `queued` is selected for practice, `practiced` is user-confirmed, and `dismissed` is hidden. Content creation requires both `qualification=qualified` and `lifecycle_state=practiced`.
 - Each platform keeps server-supplied source links; X has separate Chinese and English drafts. Non-`user_verified` packages reject generated or edited first-person test claims.
 - Approval saves the latest edits before setting `status=approved`; approved packages are immutable through the edit endpoint.
@@ -78,6 +81,8 @@
 | A second schedule fires while any collection round is active | Skip the entire overlapping round without launching another Python process. |
 | Backend cannot bind its HTTP listener | Exit without starting the initial collector; never launch a child that cannot ingest. |
 | `INTERNAL_INGEST_SECRET` is empty | Do not register ingestion, collection schedules, or the initial collection round. |
+| `BACKGROUND_JOBS_ENABLED=false` | Keep manual content generation available; report zero schedulers and do not launch background work. |
+| Content generation has no configured model | Return HTTP 503 JSON `content model is not configured`; never panic or return an empty 500. |
 | Reddit allowlist contains `r/all`, duplicates, or invalid names | Drop forbidden/invalid values and deduplicate before any request. |
 | Daily count is already 30 | Return zero remaining and do not list candidates or call the model. |
 | Model returns invalid JSON, omits core fields, or changes `evidenceClass` | Return an error; do not mark the signal qualified. |
@@ -107,6 +112,7 @@
 - Good: a fresh backend binds its port, serves health/login, and immediately starts one source-config-driven collection round.
 - Good: the user selects one qualified signal, edits three platform drafts and image prompts, saves, then explicitly approves it.
 - Good: a qualified signal moves from `new` to `queued` to `practiced`, survives refresh, and only then exposes content generation.
+- Good: local HTTP starts with DeepSeek configured and `BACKGROUND_JOBS_ENABLED=false`; health reports zero schedulers and one manual request creates a draft content package.
 - Good: a failed 08:00 webhook attempt is recorded and can retry without duplicating a successful digest.
 - Base: model analysis is not configured; collected pending signals remain visible only under `最新采集（待分析）`.
 - Bad: sending pending/rejected items as “今日必读”, consuming a model call before qualification, or claiming first-person verification for third-party evidence.
@@ -123,6 +129,7 @@
 - Test Feishu payload through an in-memory `http.RoundTripper`; do not bind ports or call a webhook.
 - Test HTTP-200 Feishu business errors, digest idempotency, the three-alert cap, and explicit alert categories.
 - Test content creation requires qualified frozen evidence, links survive every platform payload, and third-party evidence cannot become first-person testing.
+- Test `BACKGROUND_JOBS_ENABLED` defaults true and parses explicit false. Live manual-generation smoke must assert health `schedulers=0`, missing-model HTTP 503, and configured-model HTTP 201.
 - Test lifecycle state validation and qualified-only persistence; test that queued content creation returns conflict while practiced creation succeeds.
 - Test that the radar list response keeps evidence provenance but never serializes `excerpt`; list queries must select only evidence metadata while single-signal reads retain the frozen body.
 - Frontend render tests must assert rejected signals never enter outcome sections.
@@ -191,6 +198,17 @@ if signal.Qualification == "qualified" { generateContent() }
 
 // Correct: content generation follows explicit personal practice.
 if signal.Qualification == "qualified" && signal.LifecycleState == "practiced" { generateContent() }
+```
+
+```go
+// Wrong: converting a nil pointer to an interface makes the interface non-nil.
+api.NewContentPackageHandler(signalRepo, an).Register(privateAPI)
+
+// Correct: pass literal nil unless the concrete analyzer exists.
+contentHandler := api.NewContentPackageHandler(signalRepo, nil)
+if an != nil {
+    contentHandler = api.NewContentPackageHandler(signalRepo, an)
+}
 ```
 
 ```go
