@@ -6,6 +6,7 @@ from dataclasses import asdict
 from .github import GitHubCollector
 from .http import UrllibHTTPClient
 from .ingestion import BackendIngestionClient
+from .qualification import shortlist
 from .reddit import RedditCollector
 from .skillsmp import SkillsMPCollector
 from .waytoagi import WaytoAGICollector
@@ -63,10 +64,11 @@ def main() -> None:
         parser.error("INTERNAL_INGEST_SECRET is required with --ingest")
     backend = BackendIngestionClient(backend_url, secret, client)
     created = 0
-    for candidate in candidates:
+    shortlisted = shortlist(candidates)
+    for candidate in shortlisted:
         if backend.ingest(candidate, collector.fetch_detail(candidate)):
             created += 1
-    print(json.dumps({"collected": len(candidates), "created": created}, ensure_ascii=False))
+    print(json.dumps({"collected": len(candidates), "shortlisted": len(shortlisted), "created": created}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

@@ -51,3 +51,12 @@ func TestFeishuNotifierSendsRichPostWithSourceLink(t *testing.T) {
 		t.Fatalf("link = %#v", link)
 	}
 }
+
+func TestFeishuNotifierRejectsBusinessError(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"code":19001}`))}, nil
+	})}
+	if err := (&FeishuNotifier{webhook: "https://example.invalid/webhook", client: client}).Notify(context.Background(), "test"); err == nil {
+		t.Fatal("expected Feishu business error")
+	}
+}

@@ -24,4 +24,7 @@ func TestLoadUsesPrivateDefaults(t *testing.T) {
 	if cfg.CollectorDir != "../services/collector" {
 		t.Fatalf("collector dir = %q", cfg.CollectorDir)
 	}
+	if !cfg.DigestEnabled || !cfg.MajorAlertsEnabled {
+		t.Fatalf("delivery defaults disabled: %#v", cfg)
+	}
 }

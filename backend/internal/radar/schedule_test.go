@@ -37,3 +37,13 @@ func TestNewCollectionCronRegistersBothCollectionSchedules(t *testing.T) {
 		t.Fatalf("collection cron entries = %d, want 2", got)
 	}
 }
+
+func TestNewDigestCronRegistersMorningAndEveningSchedule(t *testing.T) {
+	scheduler, err := NewDigestCron(func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(scheduler.Entries()); got != 1 {
+		t.Fatalf("digest cron entries = %d, want 1", got)
+	}
+}

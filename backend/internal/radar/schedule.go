@@ -44,3 +44,18 @@ func NewCollectionCron(job func()) (*cron.Cron, error) {
 	}
 	return scheduler, nil
 }
+
+func NewDigestCron(job func()) (*cron.Cron, error) {
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return nil, err
+	}
+	scheduler := cron.New(
+		cron.WithLocation(location),
+		cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger)),
+	)
+	if _, err := scheduler.AddFunc(radarSchedules["digest"], job); err != nil {
+		return nil, err
+	}
+	return scheduler, nil
+}

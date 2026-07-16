@@ -58,6 +58,7 @@ func main() {
 	graphRepo := store.NewGraphRepo(db) // 阶段 8 新增
 	signalRepo := store.NewSignalRepo(db)
 	sourceConfigRepo := store.NewSourceConfigRepo(db)
+	deliveryRepo := store.NewDeliveryRepo(db)
 	if err := sourceConfigRepo.EnsureDefaults(); err != nil {
 		log.Fatalf("初始化来源配置失败: %v", err)
 	}
@@ -72,13 +73,15 @@ func main() {
 	// 8. 装配通知渠道（阶段 7）
 	//    把 SMTP / 飞书 / 钉钉任一配置了就启用，组成 MultiChannelNotifier
 	var notifiers []notify.Notifier
+	var feishuNotifier *notify.FeishuNotifier
 	if cfg.SMTPUser != "" && cfg.SMTPTo != "" {
 		port, _ := strconv.Atoi(cfg.SMTPPort)
 		notifiers = append(notifiers, notify.NewEmailNotifier(cfg.SMTPHost, port, cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPFrom, cfg.SMTPTo))
 		fmt.Println("邮件通知已启用")
 	}
 	if cfg.FeishuWebhook != "" {
-		notifiers = append(notifiers, notify.NewFeishuNotifier(cfg.FeishuWebhook))
+		feishuNotifier = notify.NewFeishuNotifier(cfg.FeishuWebhook)
+		notifiers = append(notifiers, feishuNotifier)
 		fmt.Println("飞书 Webhook 已启用")
 	}
 	if cfg.DingTalkWebhook != "" {
@@ -98,6 +101,31 @@ func main() {
 		fmt.Println("内部采集写入接口已启用")
 	}
 
+	var analysisRunner *radar.AnalysisRunner
+	if an != nil {
+		analysisRunner = radar.NewAnalysisRunner(signalRepo, an, cfg.DeepSeekModel)
+	}
+	var deliveryService *radar.DeliveryService
+	if feishuNotifier != nil {
+		deliveryService = radar.NewDeliveryService(deliveryRepo, signalRepo, feishuNotifier)
+	}
+	runAnalysisAndAlerts := func() {
+		if analysisRunner == nil {
+			return
+		}
+		result, err := analysisRunner.Run(context.Background(), time.Now())
+		if err != nil {
+			log.Printf("信号分析失败: %v", err)
+			return
+		}
+		log.Printf("信号分析完成: 已分析=%d 已拒绝=%d 今日余量=%d", result.Analyzed, result.Rejected, result.QuotaRemaining)
+		if deliveryService != nil && cfg.MajorAlertsEnabled {
+			if err := deliveryService.SendMajorAlerts(context.Background(), time.Now()); err != nil {
+				log.Printf("重磅信号提醒失败: %v", err)
+			}
+		}
+	}
+
 	schedulerCount := 0
 	var collectionRunner *radar.CollectionRunner
 	if cfg.InternalIngestSecret != "" {
@@ -111,6 +139,7 @@ func main() {
 			if err := collectionRunner.Run(context.Background()); err != nil {
 				log.Printf("采集任务部分或全部失败: %v", err)
 			}
+			runAnalysisAndAlerts()
 		})
 		if err != nil {
 			log.Fatalf("初始化采集调度失败: %v", err)
@@ -119,6 +148,20 @@ func main() {
 		defer collectionCron.Stop()
 		schedulerCount = len(collectionCron.Entries())
 		fmt.Printf("采集调度已启用: %d 条计划\n", schedulerCount)
+	}
+	if deliveryService != nil && cfg.DigestEnabled {
+		digestCron, err := radar.NewDigestCron(func() {
+			if err := deliveryService.SendDigest(context.Background(), time.Now()); err != nil {
+				log.Printf("飞书摘要发送失败: %v", err)
+			}
+		})
+		if err != nil {
+			log.Fatalf("初始化摘要调度失败: %v", err)
+		}
+		digestCron.Start()
+		defer digestCron.Stop()
+		schedulerCount += len(digestCron.Entries())
+		fmt.Println("飞书摘要调度已启用: 每日 08:00 / 18:00")
 	}
 	r.GET("/health", func(c *gin.Context) {
 		sourceCount := 0
@@ -147,6 +190,7 @@ func main() {
 	handler.Register(privateAPI)
 	api.NewSourceConfigHandler(sourceConfigRepo).Register(privateAPI)
 	api.NewRadarHandler(signalRepo).Register(privateAPI)
+	api.NewContentPackageHandler(signalRepo, an).Register(privateAPI)
 
 	// WS 路由（不走 /api 前缀）
 	r.GET("/ws", authService.Require(), func(c *gin.Context) {
@@ -172,10 +216,12 @@ func main() {
 			log.Println("首次采集已启动")
 			if err := collectionRunner.Run(context.Background()); err != nil {
 				log.Printf("首次采集部分或全部失败: %v", err)
-				return
 			}
-			log.Println("首次采集完成")
+			runAnalysisAndAlerts()
+			log.Println("首次采集与分析完成")
 		}()
+	} else if analysisRunner != nil {
+		go runAnalysisAndAlerts()
 	}
 	if err := r.RunListener(listener); err != nil {
 		log.Fatalf("服务启动失败: %v", err)

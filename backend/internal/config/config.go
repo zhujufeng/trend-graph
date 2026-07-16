@@ -62,9 +62,11 @@ type Config struct {
 	SMTPFrom string
 	SMTPTo   string // 逗号分隔多收件人
 
-	FeishuWebhook   string
-	DingTalkWebhook string
-	DingTalkSecret  string
+	FeishuWebhook      string
+	DigestEnabled      bool
+	MajorAlertsEnabled bool
+	DingTalkWebhook    string
+	DingTalkSecret     string
 }
 
 // Load 加载配置。
@@ -97,15 +99,17 @@ func Load() *Config {
 		CollectorDir:         getEnv("COLLECTOR_DIR", "../services/collector"),
 
 		// 阶段 7 通知配置
-		SMTPHost:        getEnv("SMTP_HOST", ""),
-		SMTPPort:        getEnv("SMTP_PORT", "465"),
-		SMTPUser:        getEnv("SMTP_USER", ""),
-		SMTPPass:        getEnv("SMTP_PASS", ""),
-		SMTPFrom:        getEnv("SMTP_FROM", ""),
-		SMTPTo:          getEnv("SMTP_TO", ""),
-		FeishuWebhook:   getEnv("FEISHU_WEBHOOK", ""),
-		DingTalkWebhook: getEnv("DINGTALK_WEBHOOK", ""),
-		DingTalkSecret:  getEnv("DINGTALK_SECRET", ""),
+		SMTPHost:           getEnv("SMTP_HOST", ""),
+		SMTPPort:           getEnv("SMTP_PORT", "465"),
+		SMTPUser:           getEnv("SMTP_USER", ""),
+		SMTPPass:           getEnv("SMTP_PASS", ""),
+		SMTPFrom:           getEnv("SMTP_FROM", ""),
+		SMTPTo:             getEnv("SMTP_TO", ""),
+		FeishuWebhook:      getEnv("FEISHU_WEBHOOK", ""),
+		DigestEnabled:      getEnvBool("DIGEST_ENABLED", true),
+		MajorAlertsEnabled: getEnvBool("MAJOR_ALERTS_ENABLED", true),
+		DingTalkWebhook:    getEnv("DINGTALK_WEBHOOK", ""),
+		DingTalkSecret:     getEnv("DINGTALK_SECRET", ""),
 	}
 
 	// 阶段 2 数据库是必需的，没配就报错退出

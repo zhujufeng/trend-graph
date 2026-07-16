@@ -15,6 +15,7 @@ import (
 
 type sourceConfigStore interface {
 	List() ([]store.SourceConfig, error)
+	LatestRuns() (map[string]store.CollectionRun, error)
 	Save(store.SourceConfig) (*store.SourceConfig, error)
 }
 
@@ -39,12 +40,13 @@ type updateSourceConfigRequest struct {
 }
 
 type sourceConfigResponse struct {
-	Source        string          `json:"source"`
-	Enabled       bool            `json:"enabled"`
-	Settings      json.RawMessage `json:"settings"`
-	LastSuccessAt *time.Time      `json:"lastSuccessAt,omitempty"`
-	LastFailure   string          `json:"lastFailure,omitempty"`
-	UpdatedAt     time.Time       `json:"updatedAt"`
+	Source        string               `json:"source"`
+	Enabled       bool                 `json:"enabled"`
+	Settings      json.RawMessage      `json:"settings"`
+	LastSuccessAt *time.Time           `json:"lastSuccessAt,omitempty"`
+	LastFailure   string               `json:"lastFailure,omitempty"`
+	UpdatedAt     time.Time            `json:"updatedAt"`
+	LastRun       *store.CollectionRun `json:"lastRun,omitempty"`
 }
 
 func (h *SourceConfigHandler) List(c *gin.Context) {
@@ -53,12 +55,20 @@ func (h *SourceConfigHandler) List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list source configs"})
 		return
 	}
+	runs, err := h.configs.LatestRuns()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list collection runs"})
+		return
+	}
 	views := make([]sourceConfigResponse, 0, len(configs))
 	for _, config := range configs {
 		view, err := sourceConfigView(config)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid stored source settings"})
 			return
+		}
+		if run, ok := runs[config.Source]; ok {
+			view.LastRun = &run
 		}
 		views = append(views, view)
 	}

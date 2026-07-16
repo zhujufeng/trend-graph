@@ -46,22 +46,38 @@ func (r *SignalRepo) ListRadarSignals(limit int) ([]RadarSignal, error) {
 	// replace with batched lookups only if measurements show it matters.
 	result := make([]RadarSignal, 0, len(signals))
 	for _, signal := range signals {
-		item := RadarSignal{Signal: signal}
-		var evidence EvidenceSnapshot
-		if err := r.db.Where("signal_id = ?", signal.ID).Order("captured_at DESC").First(&evidence).Error; err == nil {
-			item.Evidence = &evidence
-		} else if err != gorm.ErrRecordNotFound {
-			return nil, err
-		}
-		var analysis SignalAnalysis
-		if err := r.db.Where("signal_id = ?", signal.ID).First(&analysis).Error; err == nil {
-			item.Analysis = &analysis
-		} else if err != gorm.ErrRecordNotFound {
+		item, err := r.loadRadarSignal(signal)
+		if err != nil {
 			return nil, err
 		}
 		result = append(result, item)
 	}
 	return result, nil
+}
+
+func (r *SignalRepo) GetRadarSignal(id int64) (RadarSignal, error) {
+	var signal Signal
+	if err := r.db.First(&signal, id).Error; err != nil {
+		return RadarSignal{}, err
+	}
+	return r.loadRadarSignal(signal)
+}
+
+func (r *SignalRepo) loadRadarSignal(signal Signal) (RadarSignal, error) {
+	item := RadarSignal{Signal: signal}
+	var evidence EvidenceSnapshot
+	if err := r.db.Where("signal_id = ?", signal.ID).Order("captured_at DESC").First(&evidence).Error; err == nil {
+		item.Evidence = &evidence
+	} else if err != gorm.ErrRecordNotFound {
+		return RadarSignal{}, err
+	}
+	var analysis SignalAnalysis
+	if err := r.db.Where("signal_id = ?", signal.ID).First(&analysis).Error; err == nil {
+		item.Analysis = &analysis
+	} else if err != gorm.ErrRecordNotFound {
+		return RadarSignal{}, err
+	}
+	return item, nil
 }
 
 func (r *SignalRepo) CountAnalysesSince(since time.Time) (int, error) {
@@ -104,6 +120,52 @@ func (r *SignalRepo) SaveQualifiedAnalysis(analysis SignalAnalysis, reason strin
 			"qualification": "qualified", "qualification_reason": reason,
 		}).Error
 	})
+}
+
+func (r *SignalRepo) CreateContentPackage(content *ContentPackage) error {
+	return r.db.Create(content).Error
+}
+
+func (r *SignalRepo) GetContentPackage(id int64) (ContentPackage, error) {
+	var content ContentPackage
+	err := r.db.First(&content, id).Error
+	return content, err
+}
+
+func (r *SignalRepo) GetEvidenceSnapshot(id int64) (EvidenceSnapshot, error) {
+	var evidence EvidenceSnapshot
+	err := r.db.First(&evidence, id).Error
+	return evidence, err
+}
+
+func (r *SignalRepo) UpdateContentPackage(content ContentPackage) error {
+	result := r.db.Model(&ContentPackage{}).
+		Where("id = ? AND status <> ?", content.ID, "approved").
+		Updates(map[string]any{
+			"strategy_json": content.StrategyJSON, "xiaohongshu_json": content.XiaohongshuJSON,
+			"wechat_json": content.WechatJSON, "x_json": content.XJSON,
+			"visual_plan_json": content.VisualPlanJSON,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (r *SignalRepo) ApproveContentPackage(id int64, now time.Time) error {
+	result := r.db.Model(&ContentPackage{}).Where("id = ?", id).Updates(map[string]any{
+		"status": "approved", "approved_at": now,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // CanonicalURL removes fragments and known tracking parameters so the same

@@ -10,6 +10,7 @@ import (
 )
 
 func TestMulti_GitHub(t *testing.T) {
+	requireLiveTest(t)
 	c := NewGitHubCrawler()
 	items, err := c.Fetch("", 5)
 	if err != nil {
@@ -25,6 +26,7 @@ func TestMulti_GitHub(t *testing.T) {
 }
 
 func TestMulti_Reddit(t *testing.T) {
+	requireLiveTest(t)
 	c := NewRedditCrawler()
 	items, err := c.Fetch("go", 5)
 	if err != nil {
@@ -38,6 +40,7 @@ func TestMulti_Reddit(t *testing.T) {
 }
 
 func TestMulti_Bing(t *testing.T) {
+	requireLiveTest(t)
 	c := NewBingCrawler()
 	items, err := c.Fetch("AI Agent", 5)
 	if err != nil {

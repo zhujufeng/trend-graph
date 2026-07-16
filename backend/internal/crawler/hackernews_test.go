@@ -4,6 +4,7 @@ package crawler
 
 import (
 	"encoding/json"
+	"os"
 	"testing"
 )
 
@@ -12,6 +13,7 @@ import (
 //
 // 运行: cd backend && go test -v -run TestHackerNewsFetch ./internal/crawler/
 func TestHackerNewsFetch(t *testing.T) {
+	requireLiveTest(t)
 	c := NewHackerNewsCrawler()
 	items, err := c.Fetch("", 3)
 	if err != nil {
@@ -24,6 +26,13 @@ func TestHackerNewsFetch(t *testing.T) {
 	for i, it := range items {
 		b, _ := json.MarshalIndent(it, "", "  ")
 		t.Logf("--- #%d ---\n%s", i+1, string(b))
+	}
+}
+
+func requireLiveTest(t *testing.T) {
+	t.Helper()
+	if os.Getenv("RUN_LIVE_TESTS") != "1" {
+		t.Skip("set RUN_LIVE_TESTS=1 to run networked integration tests")
 	}
 }
 

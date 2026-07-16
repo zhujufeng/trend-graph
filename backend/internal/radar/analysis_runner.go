@@ -40,12 +40,7 @@ func NewAnalysisRunner(store analysisStore, model signalAnalyzer, modelName stri
 }
 
 func (r *AnalysisRunner) Run(ctx context.Context, now time.Time) (AnalysisRunResult, error) {
-	location, err := time.LoadLocation("Asia/Shanghai")
-	if err != nil {
-		return AnalysisRunResult{}, err
-	}
-	localNow := now.In(location)
-	start := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, location)
+	_, start, err := shanghaiDay(now)
 	used, err := r.store.CountAnalysesSince(start)
 	if err != nil {
 		return AnalysisRunResult{}, err
@@ -76,7 +71,7 @@ func (r *AnalysisRunner) Run(ctx context.Context, now time.Time) (AnalysisRunRes
 			continue
 		}
 		output, err := r.model.AnalyzeSignal(ctx,
-			analyzer.SignalInput{OriginalTitle: item.Signal.OriginalTitle, OriginalURL: item.Signal.OriginalURL},
+			analyzer.SignalInput{Source: item.Signal.Source, OriginalTitle: item.Signal.OriginalTitle, OriginalURL: item.Signal.OriginalURL},
 			analyzer.EvidenceInput{SourceURL: item.Evidence.SourceURL, EvidenceClass: item.Evidence.EvidenceClass, Excerpt: item.Evidence.Excerpt},
 		)
 		if err != nil {

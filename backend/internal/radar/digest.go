@@ -15,11 +15,12 @@ type Digest struct {
 }
 
 type DigestSignal struct {
-	Title         string
-	WhatChanged   string
-	Action        string
-	EvidenceClass string
-	LinkURL       string
+	Title          string
+	WhatChanged    string
+	Interpretation string
+	Action         string
+	EvidenceClass  string
+	LinkURL        string
 }
 
 type DigestOpportunity struct {
@@ -29,6 +30,7 @@ type DigestOpportunity struct {
 
 type digestAnalysis struct {
 	WhatChanged        string `json:"whatChanged"`
+	PracticalUse       string `json:"practicalUse"`
 	Action             string `json:"action"`
 	ContentOpportunity string `json:"contentOpportunity"`
 }
@@ -56,7 +58,8 @@ func BuildDigest(items []store.RadarSignal, now time.Time) (Digest, error) {
 		}
 		digest.Signals = append(digest.Signals, DigestSignal{
 			Title: item.Signal.OriginalTitle, WhatChanged: analysis.WhatChanged,
-			Action: analysis.Action, EvidenceClass: evidenceClass, LinkURL: item.Signal.OriginalURL,
+			Interpretation: analysis.PracticalUse, Action: analysis.Action,
+			EvidenceClass: evidenceClass, LinkURL: item.Signal.OriginalURL,
 		})
 		if analysis.ContentOpportunity != "" && len(digest.ContentOpportunities) < 3 {
 			digest.ContentOpportunities = append(digest.ContentOpportunities, DigestOpportunity{

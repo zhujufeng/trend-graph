@@ -16,11 +16,16 @@
 - `(*store.SourceConfigRepo).RecordCollectionRun(store.CollectionRun) error`
 - `radar.NewCollectionCron(job func()) (*cron.Cron, error)`
 - `(*analyzer.Analyzer).AnalyzeSignal(ctx, analyzer.SignalInput, analyzer.EvidenceInput) (analyzer.SignalAnalysisOutput, error)`
+- `(*analyzer.Analyzer).GenerateContentPackage(ctx, analyzer.SignalInput, analyzer.EvidenceInput, analysisJSON) (analyzer.ContentPackageDraft, error)`
 - `radar.BuildDigest(items []store.RadarSignal, now time.Time) (Digest, error)`
+- `(*radar.DeliveryService).SendDigest(ctx, now) error`
+- `(*radar.DeliveryService).SendMajorAlerts(ctx, now) error`
 - `notify.FeishuNotifier.Notify(ctx, notify.FeishuPost) error`
+- Content API: `POST /api/radar/signals/:id/content-packages`, `GET|PUT /api/content-packages/:id`, `POST /api/content-packages/:id/approve`.
 - Collector command: `uv run --no-sync python -m signal_collector.cli --source {waytoagi,skillsmp,github,reddit}`; SkillsMP/GitHub also require `--query`.
 - Runtime environment: `COLLECTOR_DIR` defaults to `../services/collector`; the Go runner supplies `BACKEND_URL` and `INTERNAL_INGEST_SECRET` directly to the child process.
 - Python seams: `search()` or `list_candidates()` returns `Candidate`; `fetch_detail(Candidate)` returns `EvidenceDetail`.
+- Python deterministic shortlist: `qualification.shortlist(candidates, now)` runs before detail fetch and ingestion.
 - DB transition: `signals.qualification=pending -> qualified|rejected`; qualified writes `signal_analyses` and the signal state in one transaction.
 
 ### 3. Contracts
@@ -35,6 +40,8 @@
 - `GITHUB_TOKEN` and `SKILLSMP_API_KEY` are optional; a missing Reddit credential is a degraded-source error, never permission to scrape logged-out pages.
 - `DEEPSEEK_MODEL` defaults to `deepseek-v4-pro`; the daily Asia/Shanghai model-analysis quota is 30 newly analyzed signals.
 - Structured JSON preserves `evidenceClass` and includes facts with source URLs, `whatChanged`, audience, practical use, prerequisites, pain point, action, content opportunity, uncertainty, and alert decision.
+- GitHub and SkillsMP analysis requires evidence-backed `toolType`, `compatibleClients`, and `installation`; never translate “universal” into an unsupported one-click claim.
+- `alertEligible=true` requires `alertReason` and exactly one category: `major_release`, `material_efficiency_gain`, `corroborated_pain_point`, or `source_backed_content_opportunity`.
 - Schedules use Asia/Shanghai: collection `0 */3 * * *`, pre-digest refresh `40 7,17 * * *`, digest `0 8,18 * * *`.
 - Go owns scheduling and source health; Python owns source-specific collection and authenticated ingestion. Disabled sources never start a process.
 - A failed source records a failed `collection_runs` row and updates `source_configs.last_failure`, but does not prevent later enabled sources from running. Success updates `last_success_at` and clears `last_failure` in the same transaction as its audit row.
@@ -42,6 +49,11 @@
 - When collection is configured, backend startup binds the HTTP listener first and then starts one asynchronous collection round. This guarantees the Python child can call the internal ingestion route; scheduled rounds remain unchanged.
 - Pending signals may appear only in a clearly labeled `最新采集（待分析）` section. They must never be promoted into `今日必读`, tools, content opportunities, digests, or alerts before qualification.
 - A digest contains at most 8 qualified analyzed signals and 3 content opportunities, preserving each original URL. Feishu uses `msg_type=post` with `zh_cn` rich-post content.
+- Digest delivery uses one idempotency key per Shanghai date/hour. Major alerts use one key per signal and are capped at three successful sends per Shanghai day. Failed sends and stale `running` deliveries older than 15 minutes are retryable.
+- `DIGEST_ENABLED` and `MAJOR_ALERTS_ENABLED` independently disable those jobs without deleting stored history.
+- Content generation is user-triggered only. It freezes `evidenceSnapshotId`, stores separate strategy/Xiaohongshu/WeChat/X/visual JSON artifacts, and never renders images or publishes externally.
+- Each platform keeps server-supplied source links; X has separate Chinese and English drafts. Non-`user_verified` packages reject generated or edited first-person test claims.
+- Approval saves the latest edits before setting `status=approved`; approved packages are immutable through the edit endpoint.
 
 ### 4. Validation & Error Matrix
 
@@ -61,6 +73,11 @@
 | Model returns invalid JSON, omits core fields, or changes `evidenceClass` | Return an error; do not mark the signal qualified. |
 | Digest analysis JSON is invalid | Return an error; do not send a partial digest. |
 | Feishu returns non-200 | Return an error so delivery can be retried and recorded. |
+| Feishu returns HTTP 200 with non-zero business `code` | Treat it as failure and record a retryable delivery. |
+| Alert lacks a supported category or reason | Reject the model output; do not send. |
+| Content creation targets pending/rejected/missing-evidence signal | Return HTTP 409 without calling the model. |
+| Content edit removes source links or adds first-person testing to third-party evidence | Return HTTP 400 and keep the stored draft. |
+| Default `go test ./...` reaches a live source | Gate the misclassified test behind `RUN_LIVE_TESTS=1`. |
 
 ### 5. Good / Base / Bad Cases
 
@@ -69,9 +86,12 @@
 - Base: a GitHub repository without README is omitted while other candidates can continue; it is not model-analyzed.
 - Base: Reddit is degraded because credentials are missing; WaytoAGI, SkillsMP, and GitHub still run and receive their own audit rows.
 - Good: a fresh backend binds its port, serves health/login, and immediately starts one source-config-driven collection round.
+- Good: the user selects one qualified signal, edits three platform drafts and image prompts, saves, then explicitly approves it.
+- Good: a failed 08:00 webhook attempt is recorded and can retry without duplicating a successful digest.
 - Base: model analysis is not configured; collected pending signals remain visible only under `最新采集（待分析）`.
 - Bad: sending pending/rejected items as “今日必读”, consuming a model call before qualification, or claiming first-person verification for third-party evidence.
 - Bad: marking the SkillsMP description as original evidence or silently using an unauthenticated Reddit scraper.
+- Bad: generating packages for every candidate, approving unsaved browser edits, or letting third-party evidence become “我实测”.
 
 ### 6. Tests Required
 
@@ -80,11 +100,14 @@
 - Test analyzer prompts/structured response with a fake AI client; never call DeepSeek in default tests.
 - Test schedule next-runs from an Asia/Shanghai timestamp and digest caps/link preservation.
 - Test Feishu payload through an in-memory `http.RoundTripper`; do not bind ports or call a webhook.
+- Test HTTP-200 Feishu business errors, digest idempotency, the three-alert cap, and explicit alert categories.
+- Test content creation requires qualified frozen evidence, links survive every platform payload, and third-party evidence cannot become first-person testing.
 - Frontend render tests must assert rejected signals never enter outcome sections.
 - Frontend render tests must assert pending signals are visible in `最新采集（待分析）` while remaining absent from qualified outcome sections.
 - Collector contract tests must cover GitHub README/release decoding, SkillsMP-to-`SKILL.md` resolution, Reddit OAuth/allowlist/detail parsing, and authenticated ingestion without network access.
 - Runner tests must inject the process boundary and assert disabled-source skipping, Reddit allowlist arguments, per-source success/failure audit records, continuation after failure, and whole-round overlap prevention.
 - Live smoke tests are read-only and separate: WaytoAGI detail, SkillsMP GitHub detail, and a known public GitHub README/release. Reddit live success requires real approved OAuth credentials.
+- Legacy crawler network tests run only with `RUN_LIVE_TESTS=1`; the default Go suite is deterministic and offline.
 
 ### 7. Wrong vs Correct
 
@@ -126,6 +149,25 @@ if !runner.runMu.TryLock() {
     return nil
 }
 defer runner.runMu.Unlock()
+```
+
+```go
+// Wrong: a boolean lets the model invent its own definition of “major”.
+if analysis.AlertEligible { sendAlert() }
+
+// Correct: validate a closed category set, then enforce DB-backed caps/idempotency.
+if analyzer.ValidAlertCategory(analysis.AlertCategory) {
+    delivery.SendMajorAlerts(ctx, now)
+}
+```
+
+```tsx
+// Wrong: approval loses unsaved editor state.
+await approveContentPackage(draft.id)
+
+// Correct: persist the evidence-linked artifacts, then approve that saved version.
+const saved = await updateContentPackage(draft)
+await approveContentPackage(saved.id)
 ```
 
 ```go

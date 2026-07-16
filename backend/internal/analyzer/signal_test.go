@@ -16,11 +16,15 @@ func TestAnalyzeSignalUsesEvidenceAndReturnsStructuredOutput(t *testing.T) {
 		"audience":"MCP 开发者",
 		"practicalUse":"定位协议错误",
 		"prerequisites":"本地测试服务器",
+		"toolType":"mcp",
+		"compatibleClients":["Codex","Claude Code"],
+		"installation":"按 SKILL.md 配置 MCP 服务器",
 		"painPoint":"调试反馈不清晰",
 		"action":"按 SKILL.md 在本地复现",
 		"contentOpportunity":"制作 MCP 排错清单",
 		"uncertainty":"尚未由本人验证",
 		"alertEligible":false,
+		"alertCategory":"",
 		"alertReason":"常规工具更新"
 	}`}
 	client.response.Usage.PromptTokens = 120
@@ -28,7 +32,7 @@ func TestAnalyzeSignalUsesEvidenceAndReturnsStructuredOutput(t *testing.T) {
 	analyzer := NewAnalyzer(client, "deepseek-v4-pro")
 
 	output, err := analyzer.AnalyzeSignal(context.Background(),
-		SignalInput{OriginalTitle: "MCP Inspector", OriginalURL: "https://github.com/owner/repo"},
+		SignalInput{Source: "skillsmp", OriginalTitle: "MCP Inspector", OriginalURL: "https://github.com/owner/repo"},
 		EvidenceInput{SourceURL: "https://github.com/owner/repo/SKILL.md", EvidenceClass: "original_documentation", Excerpt: "Install and run against a local server."},
 	)
 	if err != nil {
@@ -43,6 +47,23 @@ func TestAnalyzeSignalUsesEvidenceAndReturnsStructuredOutput(t *testing.T) {
 	}
 	if !strings.Contains(string(output.JSON), `"action":"按 SKILL.md 在本地复现"`) || output.InputTokens != 120 || output.OutputTokens != 80 {
 		t.Fatalf("output = %#v", output)
+	}
+}
+
+func TestAnalyzeSignalRejectsAlertWithoutExplicitCategory(t *testing.T) {
+	client := &captureAIClient{content: `{
+		"evidenceClass":"original_documentation",
+		"facts":[{"claim":"正式发布","sourceUrl":"https://example.com/docs"}],
+		"whatChanged":"新模型发布","audience":"开发者","practicalUse":"迁移模型","action":"阅读迁移文档",
+		"alertEligible":true,"alertReason":"影响重大"
+	}`}
+	analyzer := NewAnalyzer(client, "deepseek-v4-pro")
+	_, err := analyzer.AnalyzeSignal(context.Background(),
+		SignalInput{OriginalTitle: "Model", OriginalURL: "https://example.com/release"},
+		EvidenceInput{SourceURL: "https://example.com/docs", EvidenceClass: "original_documentation", Excerpt: "Released."},
+	)
+	if err == nil {
+		t.Fatal("expected missing alert category to be rejected")
 	}
 }
 

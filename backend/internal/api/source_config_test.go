@@ -62,6 +62,9 @@ func TestSourceConfigAPIListsCurrentSourceStates(t *testing.T) {
 			{Source: "waytoagi", Enabled: true, SettingsJSON: "{}"},
 			{Source: "reddit", Enabled: false, SettingsJSON: `{"communities":["r/cursor"]}`},
 		},
+		runs: map[string]store.CollectionRun{
+			"reddit": {Source: "reddit", Status: "success", ItemCount: 6, DurationMS: 1200},
+		},
 	}
 	router := gin.New()
 	NewSourceConfigHandler(repo).Register(router.Group("/api"))
@@ -80,6 +83,7 @@ func TestSourceConfigAPIListsCurrentSourceStates(t *testing.T) {
 			Settings struct {
 				Communities []string `json:"communities"`
 			} `json:"settings"`
+			LastRun *store.CollectionRun `json:"lastRun"`
 		} `json:"data"`
 		Count int `json:"count"`
 	}
@@ -91,6 +95,9 @@ func TestSourceConfigAPIListsCurrentSourceStates(t *testing.T) {
 	}
 	if len(payload.Data[1].Settings.Communities) != 1 || payload.Data[1].Settings.Communities[0] != "r/cursor" {
 		t.Fatalf("settings = %#v", payload.Data[1].Settings)
+	}
+	if payload.Data[1].LastRun == nil || payload.Data[1].LastRun.ItemCount != 6 || payload.Data[1].LastRun.DurationMS != 1200 {
+		t.Fatalf("last run = %#v", payload.Data[1].LastRun)
 	}
 }
 
@@ -134,12 +141,17 @@ func TestSourceConfigAPIRejectsUnsupportedSource(t *testing.T) {
 
 type fakeSourceConfigStore struct {
 	configs []store.SourceConfig
+	runs    map[string]store.CollectionRun
 	config  store.SourceConfig
 	updated bool
 }
 
 func (s *fakeSourceConfigStore) List() ([]store.SourceConfig, error) {
 	return s.configs, nil
+}
+
+func (s *fakeSourceConfigStore) LatestRuns() (map[string]store.CollectionRun, error) {
+	return s.runs, nil
 }
 
 func (s *fakeSourceConfigStore) Save(config store.SourceConfig) (*store.SourceConfig, error) {

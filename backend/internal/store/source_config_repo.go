@@ -38,6 +38,24 @@ func (r *SourceConfigRepo) List() ([]SourceConfig, error) {
 	return configs, err
 }
 
+func (r *SourceConfigRepo) LatestRuns() (map[string]CollectionRun, error) {
+	configs, err := r.List()
+	if err != nil {
+		return nil, err
+	}
+	runs := make(map[string]CollectionRun, len(configs))
+	// ponytail: four configured sources; use a batched DISTINCT ON query only if this list grows materially.
+	for _, config := range configs {
+		var run CollectionRun
+		if err := r.db.Where("source = ?", config.Source).Order("started_at DESC").First(&run).Error; err == nil {
+			runs[config.Source] = run
+		} else if err != gorm.ErrRecordNotFound {
+			return nil, err
+		}
+	}
+	return runs, nil
+}
+
 func (r *SourceConfigRepo) Save(config SourceConfig) (*SourceConfig, error) {
 	config.ID = 0
 	config.CreatedAt = time.Time{}

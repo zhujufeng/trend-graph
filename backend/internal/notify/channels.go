@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/smtp"
 	"strconv"
@@ -168,6 +169,16 @@ func (f *FeishuNotifier) Notify(ctx context.Context, payload any) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("飞书返回 HTTP %d", resp.StatusCode)
+	}
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("读取飞书响应失败: %w", err)
+	}
+	var result struct {
+		Code int `json:"code"`
+	}
+	if len(raw) > 0 && json.Unmarshal(raw, &result) == nil && result.Code != 0 {
+		return fmt.Errorf("飞书返回业务错误 %d", result.Code)
 	}
 	return nil
 }

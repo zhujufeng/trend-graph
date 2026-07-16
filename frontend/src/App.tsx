@@ -2,16 +2,19 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { APIError } from './api/client'
 import {
+  approveContentPackage,
+  createContentPackage,
   listRadarSignals,
   listSourceConfigs,
   login,
   logout,
   updateRedditCommunities,
+  updateContentPackage,
   updateSourceConfig,
 } from './api/radar'
 import { LoginPage } from './pages/LoginPage'
 import { RadarDashboard } from './pages/RadarDashboard'
-import type { RadarSignal, SourceConfig } from './types'
+import type { ContentPackage, RadarSignal, SourceConfig } from './types'
 
 export function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
@@ -19,6 +22,7 @@ export function App() {
   const [sources, setSources] = useState<SourceConfig[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [contentPackage, setContentPackage] = useState<ContentPackage | null>(null)
 
   const loadDashboard = useCallback(async () => {
     setLoading(true)
@@ -85,6 +89,44 @@ export function App() {
     }
   }
 
+  const handleGenerateContent = async (signalId: number) => {
+    setLoading(true)
+    setError('')
+    try {
+      setContentPackage(await createContentPackage(signalId))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSaveContent = async (content: ContentPackage) => {
+    setLoading(true)
+    setError('')
+    try {
+      setContentPackage(await updateContentPackage(content))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleApproveContent = async (content: ContentPackage) => {
+    setLoading(true)
+    setError('')
+    try {
+      const saved = await updateContentPackage(content)
+      await approveContentPackage(saved.id)
+      setContentPackage({ ...saved, status: 'approved', approvedAt: new Date().toISOString() })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (authenticated === null) {
     return <main className="grid min-h-full place-items-center bg-base-bg text-text-secondary">正在连接私人雷达…</main>
   }
@@ -101,6 +143,10 @@ export function App() {
       onLogout={handleLogout}
       onSourceChange={handleSourceChange}
       onRedditCommunitiesChange={handleRedditCommunitiesChange}
+      contentPackage={contentPackage}
+      onGenerateContent={handleGenerateContent}
+      onSaveContent={handleSaveContent}
+      onApproveContent={handleApproveContent}
     />
   )
 }

@@ -102,3 +102,58 @@ c.JSON(http.StatusOK, gin.H{"settings": config.SettingsJSON})
 ```go
 c.JSON(http.StatusOK, gin.H{"settings": json.RawMessage(config.SettingsJSON)})
 ```
+
+## Scenario: Editable content package boundary
+
+### 1. Scope / Trigger
+
+- Trigger: React creates, edits, and approves a model-generated package derived from one frozen signal evidence snapshot.
+
+### 2. Signatures
+
+- `POST /api/radar/signals/:id/content-packages -> {data: ContentPackage}`
+- `PUT /api/content-packages/:id -> {data: ContentPackage}`
+- `POST /api/content-packages/:id/approve -> {approved: true}`
+- Frontend owner: `ContentPackage` and nested draft types in `src/types/index.ts`.
+
+### 3. Contracts
+
+- `strategy`, `xiaohongshu`, `wechat`, `x`, and `visualPlan` are JSON objects/arrays, never escaped strings.
+- Xiaohongshu/WeChat drafts keep `sourceLinks`; X keeps Chinese, English, and `sourceLinks`; each visual item has `purpose`, `aspectRatio`, and `prompt`.
+- Approval persists the current editor state first. `status=approved` disables editing.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Model is not configured | Creation returns 503 and preserves dashboard state. |
+| Signal is not qualified | Creation returns 409 and no editor opens. |
+| Artifact is invalid or loses evidence links | Update returns 400 and keeps the previous draft. |
+| Package is approved | Inputs are disabled and later PUT returns conflict. |
+
+### 5. Good / Base / Bad Cases
+
+- Good: the editor shows separate Xiaohongshu, WeChat, X Chinese/English, visual prompts, and evidence links.
+- Base: an API error remains visible while existing dashboard state is preserved.
+- Bad: one textarea stores an opaque three-platform blob, or approval drops unsaved edits.
+
+### 6. Tests Required
+
+- Render test asserts all platform fields, visual prompt, evidence URL, save, and approval controls.
+- API contract test asserts nested JSON round-trips without client-side parsing casts.
+- Run `npm test`, `npm run build`, and `npm run lint` after nested content type changes.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```tsx
+await approveContentPackage(draft.id)
+```
+
+#### Correct
+
+```tsx
+const saved = await updateContentPackage(draft)
+await approveContentPackage(saved.id)
+```

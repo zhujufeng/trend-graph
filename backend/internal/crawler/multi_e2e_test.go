@@ -13,8 +13,11 @@ import (
 )
 
 func TestMultiE2E_ConcurrentFetch(t *testing.T) {
+	requireLiveTest(t)
 	// 组装所有 9 源（同 main.go 的顺序）
-	all := []interface{ Fetch(string, int) ([]interface{}, error) }{} // 占位类型断言不行
+	all := []interface {
+		Fetch(string, int) ([]interface{}, error)
+	}{} // 占位类型断言不行
 	_ = all
 
 	// 直接构造实例切片

@@ -30,6 +30,8 @@ describe('RadarDashboard', () => {
           whatChanged: '新增 MCP 检查流程',
           action: '用测试服务器复现',
           contentOpportunity: '做一期 MCP 排错清单',
+          installation: '按 SKILL.md 配置 MCP 服务器',
+          compatibleClients: ['Codex', 'Claude Code'],
         },
       },
     ]
@@ -53,6 +55,10 @@ describe('RadarDashboard', () => {
         onLogout={vi.fn()}
         onSourceChange={vi.fn()}
         onRedditCommunitiesChange={vi.fn()}
+        contentPackage={null}
+        onGenerateContent={vi.fn()}
+        onSaveContent={vi.fn()}
+        onApproveContent={vi.fn()}
       />,
     )
 
@@ -63,9 +69,12 @@ describe('RadarDashboard', () => {
     expect(html).toContain('MCP Inspector')
     expect(html).toContain('https://github.com/owner/repo')
     expect(html).toContain('用测试服务器复现')
+    expect(html).toContain('按 SKILL.md 配置 MCP 服务器')
+    expect(html).toContain('Codex、Claude Code')
     expect(html).toContain('Reddit 社区白名单')
     expect(html).toContain('r/claudeai, r/cursor')
     expect(html).toContain('保存白名单')
+    expect(html).toContain('生成三平台内容包')
   })
 
   it('keeps rejected signals out of outcome sections', () => {
@@ -91,6 +100,10 @@ describe('RadarDashboard', () => {
         onLogout={vi.fn()}
         onSourceChange={vi.fn()}
         onRedditCommunitiesChange={vi.fn()}
+        contentPackage={null}
+        onGenerateContent={vi.fn()}
+        onSaveContent={vi.fn()}
+        onApproveContent={vi.fn()}
       />,
     )
 
@@ -120,6 +133,10 @@ describe('RadarDashboard', () => {
         onLogout={vi.fn()}
         onSourceChange={vi.fn()}
         onRedditCommunitiesChange={vi.fn()}
+        contentPackage={null}
+        onGenerateContent={vi.fn()}
+        onSaveContent={vi.fn()}
+        onApproveContent={vi.fn()}
       />,
     )
 
@@ -127,5 +144,43 @@ describe('RadarDashboard', () => {
     expect(html).toContain(pending.title)
     expect(html).toContain(pending.originalUrl)
     expect(html).toContain('待分析')
+  })
+
+  it('renders editable three-platform drafts with evidence links', () => {
+    const html = renderToStaticMarkup(
+      <RadarDashboard
+        signals={[]}
+        sources={[]}
+        loading={false}
+        error=""
+        onRefresh={vi.fn()}
+        onLogout={vi.fn()}
+        onSourceChange={vi.fn()}
+        onRedditCommunitiesChange={vi.fn()}
+        onGenerateContent={vi.fn()}
+        onSaveContent={vi.fn()}
+        onApproveContent={vi.fn()}
+        contentPackage={{
+          id: 11,
+          signalId: 7,
+          evidenceSnapshotId: 8,
+          status: 'draft',
+          strategy: { angle: '三步复现', audience: 'AI 用户', evidenceNote: '官方文档' },
+          xiaohongshu: { title: '小红书标题', body: '小红书正文', tags: ['AI'], sourceLinks: ['https://example.com/docs'] },
+          wechat: { title: '公众号标题', body: '公众号正文', tags: ['AI'], sourceLinks: ['https://example.com/docs'] },
+          x: { chinese: 'X 中文稿', english: 'X English draft', sourceLinks: ['https://example.com/docs'] },
+          visualPlan: [{ purpose: '封面', aspectRatio: '3:4', prompt: '中文信息图提示词' }],
+          createdAt: '2026-07-15T08:00:00Z',
+          updatedAt: '2026-07-15T08:00:00Z',
+        }}
+      />,
+    )
+
+    expect(html).toContain('三平台内容工作台')
+    expect(html).toContain('小红书正文')
+    expect(html).toContain('X English draft')
+    expect(html).toContain('中文信息图提示词')
+    expect(html).toContain('https://example.com/docs')
+    expect(html).toContain('确认可发布')
   })
 })
