@@ -79,8 +79,8 @@ Questions to answer:
 
 ### 5. Good / Base / Bad Cases
 
-- Good: a qualified SkillsMP signal renders Chinese analysis, evidence class, action, and the GitHub source link.
-- Base: a pending WaytoAGI signal renders its evidence excerpt without an analysis block.
+- Good: a qualified GitHub signal renders Chinese analysis, evidence class, action, and the original repository link.
+- Base: a pending DEV signal renders its preserved article evidence without an analysis block.
 - Bad: the browser receives `"settings":"{\\"communities\\":[...]}"` and parses it independently.
 
 ### 6. Tests Required

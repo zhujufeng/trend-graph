@@ -18,7 +18,7 @@ func TestRadarSignalsAPIReturnsEvidenceAndStructuredAnalysis(t *testing.T) {
 	repo := &fakeRadarStore{signals: []store.RadarSignal{
 		{
 			Signal: store.Signal{
-				ID: 7, Source: "skillsmp", OriginalTitle: "MCP Inspector",
+				ID: 7, Source: "github", OriginalTitle: "MCP Inspector",
 				OriginalURL: "https://github.com/owner/repo", Score: 42,
 				Qualification: "qualified", LifecycleState: "new", CreatedAt: now,
 			},

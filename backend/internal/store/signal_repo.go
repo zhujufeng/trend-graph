@@ -10,6 +10,8 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"trend-graph/internal/types"
 )
 
 type SignalRepo struct {
@@ -33,7 +35,7 @@ func (r *SignalRepo) ListRadarSignals(limit int) ([]RadarSignal, error) {
 		limit = 20
 	}
 	var signals []Signal
-	if err := r.db.
+	if err := activeRadarSignals(r.db).
 		Order("CASE qualification WHEN 'qualified' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END").
 		Order("score DESC").
 		Order("created_at DESC").
@@ -57,7 +59,7 @@ func (r *SignalRepo) ListRadarSignals(limit int) ([]RadarSignal, error) {
 
 func (r *SignalRepo) GetRadarSignal(id int64) (RadarSignal, error) {
 	var signal Signal
-	if err := r.db.First(&signal, id).Error; err != nil {
+	if err := activeRadarSignals(r.db).First(&signal, id).Error; err != nil {
 		return RadarSignal{}, err
 	}
 	return r.loadRadarSignal(signal)
@@ -88,7 +90,7 @@ func (r *SignalRepo) CountAnalysesSince(since time.Time) (int, error) {
 
 func (r *SignalRepo) ListPendingSignals(limit int) ([]RadarSignal, error) {
 	var signals []Signal
-	if err := r.db.Where("qualification = ?", "pending").Order("score DESC").Order("created_at ASC").Limit(limit).Find(&signals).Error; err != nil {
+	if err := activeRadarSignals(r.db).Where("qualification = ?", "pending").Order("score DESC").Order("created_at ASC").Limit(limit).Find(&signals).Error; err != nil {
 		return nil, err
 	}
 	result := make([]RadarSignal, 0, len(signals))
@@ -103,6 +105,10 @@ func (r *SignalRepo) ListPendingSignals(limit int) ([]RadarSignal, error) {
 		result = append(result, item)
 	}
 	return result, nil
+}
+
+func activeRadarSignals(db *gorm.DB) *gorm.DB {
+	return db.Where("source IN ?", types.RadarSources())
 }
 
 func (r *SignalRepo) SetQualification(id int64, qualification, reason string) error {

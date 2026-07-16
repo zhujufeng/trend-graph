@@ -21,19 +21,20 @@ class CaptureHTTPClient:
 class IngestionContractTests(unittest.TestCase):
     def test_posts_authenticated_signal_contract(self) -> None:
         candidate = Candidate(
-            source="skillsmp",
-            source_id="owner-repo-skill",
+            source="dev",
+            source_id="42",
             title="MCP Inspector",
-            url="https://github.com/owner/repo/tree/main/skills/mcp",
-            discovery_url="https://skillsmp.com/skills/owner-repo-skill",
+            url="https://dev.to/builder/mcp-inspector-42",
+            discovery_url="https://dev.to/api/articles/42",
             summary="Inspect MCP servers.",
             score=42,
             published_at=None,
             updated_at=datetime(2026, 7, 15, 8, 0, tzinfo=UTC),
+            author="Builder",
         )
         detail = EvidenceDetail(
-            source="skillsmp",
-            source_id="owner-repo-skill",
+            source="dev",
+            source_id="42",
             source_url=candidate.url,
             title=candidate.title,
             excerpt="Install with uv and run against a local MCP server.",
@@ -52,14 +53,14 @@ class IngestionContractTests(unittest.TestCase):
         self.assertEqual(
             http.payload,
             {
-                "source": "skillsmp",
-                "originalUrl": "https://github.com/owner/repo/tree/main/skills/mcp",
+                "source": "dev",
+                "originalUrl": "https://dev.to/builder/mcp-inspector-42",
                 "originalTitle": "MCP Inspector",
-                "author": "",
+                "author": "Builder",
                 "score": 42,
                 "publishedAt": None,
                 "updatedAt": "2026-07-15T08:00:00+00:00",
-                "evidenceUrl": "https://github.com/owner/repo/tree/main/skills/mcp",
+                "evidenceUrl": "https://dev.to/builder/mcp-inspector-42",
                 "evidenceTitle": "MCP Inspector",
                 "evidenceClass": "original_documentation",
                 "evidenceExcerpt": "Install with uv and run against a local MCP server.",

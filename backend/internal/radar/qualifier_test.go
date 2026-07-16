@@ -19,18 +19,18 @@ func TestQualifyRequiresVerifiedUsableEvidenceBeforeModelWork(t *testing.T) {
 		reason   string
 	}{
 		{
-			name:     "verified skill documentation is eligible",
-			signal:   store.Signal{Source: "skillsmp", OriginalTitle: "MCP Inspector Skill", SourceUpdatedAt: &recent},
-			evidence: store.EvidenceSnapshot{EvidenceClass: "original_documentation", Excerpt: "Install with uv, then use the MCP inspector against a local server."},
+			name:     "documented DEV practice is eligible",
+			signal:   store.Signal{Source: "dev", OriginalTitle: "I built an MCP workflow", SourceUpdatedAt: &recent},
+			evidence: store.EvidenceSnapshot{EvidenceClass: "documented_third_party_practice", Excerpt: "The article includes steps, observed results, and failures."},
 			eligible: true,
 			reason:   "eligible",
 		},
 		{
-			name:     "catalog entry still needs github verification",
-			signal:   store.Signal{Source: "skillsmp", OriginalTitle: "MCP Inspector Skill", SourceUpdatedAt: &recent},
-			evidence: store.EvidenceSnapshot{EvidenceClass: "catalog_discovery", Excerpt: "A SkillsMP listing."},
+			name:     "bluesky requires discussion evidence",
+			signal:   store.Signal{Source: "bluesky", OriginalTitle: "MCP workflow", SourceUpdatedAt: &recent},
+			evidence: store.EvidenceSnapshot{EvidenceClass: "catalog_discovery", Excerpt: "A listing."},
 			eligible: false,
-			reason:   "github_verification_required",
+			reason:   "community_evidence_required",
 		},
 		{
 			name:     "old project is not sent to the model",

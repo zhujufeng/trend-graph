@@ -1,18 +1,24 @@
 package types
 
 const (
-	SourceWaytoAGI = "waytoagi"
-	SourceSkillsMP = "skillsmp"
-	SourceGitHub   = "github"
-	SourceReddit   = "reddit"
+	SourceDEV     = "dev"
+	SourceGitHub  = "github"
+	SourceReddit  = "reddit"
+	SourceBluesky = "bluesky"
 )
+
+// RadarSources returns the active collection set for persistence queries.
+// Returning a new slice keeps callers from mutating shared package state.
+func RadarSources() []string {
+	return []string{SourceDEV, SourceGitHub, SourceReddit, SourceBluesky}
+}
 
 // IsRadarSource is the single source-of-truth for collectors and API routes
 // that are part of the first AI signal radar release. X is intentionally not
 // accepted until its keyword-search collector has been designed and tested.
 func IsRadarSource(source string) bool {
 	switch source {
-	case SourceWaytoAGI, SourceSkillsMP, SourceGitHub, SourceReddit:
+	case SourceDEV, SourceGitHub, SourceReddit, SourceBluesky:
 		return true
 	default:
 		return false

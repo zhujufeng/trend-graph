@@ -36,7 +36,7 @@ export function RadarDashboard({
   const todayKey = shanghaiDate(new Date())
   const today = qualified.filter((signal) => shanghaiDate(new Date(signal.sourceUpdatedAt ?? signal.sourcePublishedAt ?? signal.createdAt)) === todayKey)
   const pending = signals.filter((signal) => signal.qualification === 'pending')
-  const tools = qualified.filter((signal) => signal.source === 'github' || signal.source === 'skillsmp')
+  const tools = qualified.filter((signal) => signal.source === 'github')
   const content = qualified.filter((signal) => Boolean(signal.analysis?.contentOpportunity))
   const redditCommunities = sources.find((source) => source.source === 'reddit')?.settings.communities
 
@@ -74,7 +74,7 @@ export function RadarDashboard({
           )}
           {pending.length > 0 && <SignalSection title="最新采集（待分析）" signals={pending.slice(0, 12)} empty="" />}
           <SignalSection title="今日必读" signals={today.slice(0, 6)} empty="暂时没有新信号" loading={loading} onGenerateContent={onGenerateContent} />
-          <SignalSection title="可用工具与 Skill" signals={tools} empty="等待 GitHub 与 SkillsMP 的可用项目" loading={loading} onGenerateContent={onGenerateContent} />
+          <SignalSection title="可用工具与 Skill" signals={tools} empty="等待 GitHub 的可用项目" loading={loading} onGenerateContent={onGenerateContent} />
           <SignalSection title="内容素材" signals={content} empty="信号分析后会在这里出现可用选题" loading={loading} onGenerateContent={onGenerateContent} />
         </div>
 
@@ -315,7 +315,7 @@ function DraftEditor({
 }
 
 function sourceLabel(source: string) {
-  return ({ waytoagi: 'WaytoAGI', skillsmp: 'SkillsMP', github: 'GitHub', reddit: 'Reddit' } as Record<string, string>)[source] ?? source
+  return ({ dev: 'DEV Community', github: 'GitHub', reddit: 'Reddit', bluesky: 'Bluesky' } as Record<string, string>)[source] ?? source
 }
 
 function evidenceLabel(evidenceClass: string) {

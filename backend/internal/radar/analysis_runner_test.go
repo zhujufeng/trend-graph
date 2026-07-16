@@ -40,7 +40,7 @@ func TestAnalysisRunnerPersistsOneQualifiedStructuredAnalysis(t *testing.T) {
 	recent := now.Add(-time.Hour)
 	data := &fakeAnalysisStore{pending: []store.RadarSignal{
 		{
-			Signal:   store.Signal{ID: 7, Source: "skillsmp", OriginalTitle: "MCP Inspector Skill", SourceUpdatedAt: &recent},
+			Signal:   store.Signal{ID: 7, Source: "github", OriginalTitle: "MCP Inspector Skill", SourceUpdatedAt: &recent},
 			Evidence: &store.EvidenceSnapshot{ID: 11, EvidenceClass: "original_documentation", Excerpt: "Install with uv, then use the MCP inspector against a local server."},
 		},
 	}}

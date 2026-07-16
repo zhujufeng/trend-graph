@@ -16,7 +16,7 @@ func TestSourceConfigAPIUpdatesRedditAllowlist(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &fakeSourceConfigStore{
 		configs: []store.SourceConfig{
-			{Source: "waytoagi", Enabled: true, SettingsJSON: "{}"},
+			{Source: "dev", Enabled: true, SettingsJSON: "{}"},
 			{Source: "reddit", Enabled: true, SettingsJSON: `{"communities":["r/LocalLLaMA"]}`},
 		},
 	}
@@ -59,7 +59,7 @@ func TestSourceConfigAPIListsCurrentSourceStates(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &fakeSourceConfigStore{
 		configs: []store.SourceConfig{
-			{Source: "waytoagi", Enabled: true, SettingsJSON: "{}"},
+			{Source: "dev", Enabled: true, SettingsJSON: "{}"},
 			{Source: "reddit", Enabled: false, SettingsJSON: `{"communities":["r/cursor"]}`},
 		},
 		runs: map[string]store.CollectionRun{

@@ -124,8 +124,12 @@ func collectorArgs(config store.SourceConfig) ([]string, error) {
 		"--ingest",
 	}
 	switch config.Source {
-	case types.SourceSkillsMP, types.SourceGitHub:
+	case types.SourceDEV:
+		args = append(args, "--query", "mcp,claudecode,agents,ai")
+	case types.SourceGitHub:
 		args = append(args, "--query", "agent skill mcp")
+	case types.SourceBluesky:
+		args = append(args, "--query", "MCP,Claude Code,Agent Skills,Codex")
 	case types.SourceReddit:
 		var settings struct {
 			Communities []string `json:"communities"`

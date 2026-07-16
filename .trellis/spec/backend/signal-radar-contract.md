@@ -22,7 +22,7 @@
 - `(*radar.DeliveryService).SendMajorAlerts(ctx, now) error`
 - `notify.FeishuNotifier.Notify(ctx, notify.FeishuPost) error`
 - Content API: `POST /api/radar/signals/:id/content-packages`, `GET|PUT /api/content-packages/:id`, `POST /api/content-packages/:id/approve`.
-- Collector command: `uv run --no-sync python -m signal_collector.cli --source {waytoagi,skillsmp,github,reddit}`; SkillsMP/GitHub also require `--query`.
+- Collector command: `uv run --no-sync python -m signal_collector.cli --source {dev,github,reddit,bluesky}`; DEV/GitHub/Bluesky also require `--query`.
 - Runtime environment: `COLLECTOR_DIR` defaults to `../services/collector`; the Go runner supplies `BACKEND_URL` and `INTERNAL_INGEST_SECRET` directly to the child process.
 - Python seams: `search()` or `list_candidates()` returns `Candidate`; `fetch_detail(Candidate)` returns `EvidenceDetail`.
 - Python deterministic shortlist: `qualification.shortlist(candidates, now)` runs before detail fetch and ingestion.
@@ -30,17 +30,18 @@
 
 ### 3. Contracts
 
-- Accepted sources are `waytoagi`, `skillsmp`, `github`, and `reddit`; X is deferred and Linux.do is excluded.
+- Accepted sources are `dev`, `github`, `reddit`, and `bluesky`; X is deferred and Linux.do, WaytoAGI, SkillsMP, and Bilibili are excluded.
+- `types.RadarSources()` is the persistence-query allowlist. Dashboard, pending-analysis, digest/alert, and content-package lookups must filter through it so retired source rows can remain for audit without re-entering the product.
 - Recency is 30 days, preferring source update time, then publish time, then creation time.
-- SkillsMP `catalog_discovery` is only a lead and must be rejected with `github_verification_required` until original GitHub documentation is captured.
-- The SkillsMP collector must follow its GitHub URL and read the referenced `SKILL.md`; successful evidence uses the GitHub URL and `original_documentation`, not the catalog page.
+- DEV search splits a comma/whitespace-separated query into tags, deduplicates article IDs across tag results, and fetches `body_markdown` from the article-detail endpoint. Successful evidence is `documented_third_party_practice`.
 - GitHub search uses repository metadata; detail uses the JSON Contents API and decodes its Base64 `content`, then appends the latest release when present.
-- GitHub/SkillsMP require `original_documentation` plus a usable setup/run indicator; Reddit requires `community_discussion`.
+- GitHub requires `original_documentation` plus a usable setup/run indicator; Reddit and Bluesky require `community_discussion`.
 - Reddit requires `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET`, requests application-only OAuth, calls `oauth.reddit.com`, and only reads `REDDIT_COMMUNITIES` or the explicit `--communities` allowlist. `r/all` is forbidden at both configuration and collector boundaries.
-- `GITHUB_TOKEN` and `SKILLSMP_API_KEY` are optional; a missing Reddit credential is a degraded-source error, never permission to scrape logged-out pages.
+- Bluesky uses the public official AppView endpoints at `https://api.bsky.app/xrpc`: `app.bsky.feed.searchPosts` for discovery and `app.bsky.feed.getPostThread` for detail. The `public.api.bsky.app` alias is not used because it can be blocked by intermediary CDNs even when the official `api.bsky.app` endpoint succeeds.
+- `GITHUB_TOKEN` is optional; DEV and Bluesky require no key. A missing Reddit credential is a degraded-source error, never permission to scrape logged-out pages.
 - `DEEPSEEK_MODEL` defaults to `deepseek-v4-pro`; the daily Asia/Shanghai model-analysis quota is 30 newly analyzed signals.
 - Structured JSON preserves `evidenceClass` and includes facts with source URLs, `whatChanged`, audience, practical use, prerequisites, pain point, action, content opportunity, uncertainty, and alert decision.
-- GitHub and SkillsMP analysis requires evidence-backed `toolType`, `compatibleClients`, and `installation`; never translate “universal” into an unsupported one-click claim.
+- GitHub analysis requires evidence-backed `toolType`, `compatibleClients`, and `installation`; never translate “universal” into an unsupported one-click claim.
 - `alertEligible=true` requires `alertReason` and exactly one category: `major_release`, `material_efficiency_gain`, `corroborated_pain_point`, or `source_backed_content_opportunity`.
 - Schedules use Asia/Shanghai: collection `0 */3 * * *`, pre-digest refresh `40 7,17 * * *`, digest `0 8,18 * * *`.
 - Go owns scheduling and source health; Python owns source-specific collection and authenticated ingestion. Disabled sources never start a process.
@@ -60,9 +61,12 @@
 | Condition | Required behavior |
 | --- | --- |
 | Unsupported or non-AI source material | Reject before model invocation with a stable reason. |
+| A retired source still has historical `signals` rows | Preserve the rows, but exclude them from dashboard, pending analysis, delivery, and content-package lookup. |
 | `ai` appears only inside another word, such as `maintainer` | Do not count it as the AI topic token. |
 | Missing evidence or wrong evidence class | Reject; do not create `signal_analyses`. |
 | GitHub README or referenced `SKILL.md` is missing | Treat the candidate as unusable; do not downgrade to catalog evidence. |
+| DEV article detail has no body or description | Fail that candidate; title-only evidence is forbidden. |
+| Bluesky search/thread response has no post text | Fail that candidate; do not synthesize discussion evidence from metadata. |
 | Reddit credentials are missing or OAuth has no access token | Fail the source run explicitly; do not fall back to `reddit.com/*.json` or `r/all`. |
 | One enabled collector exits non-zero or returns invalid JSON | Record that source as failed, continue later sources, and return an aggregate error after the round. |
 | A second schedule fires while any collection round is active | Skip the entire overlapping round without launching another Python process. |
@@ -82,15 +86,17 @@
 ### 5. Good / Base / Bad Cases
 
 - Good: a recent GitHub README with install/use evidence is analyzed once, marked qualified transactionally, and appears with its original link and concrete action.
-- Base: a recent SkillsMP catalog entry remains a rejected discovery lead until GitHub evidence is collected.
+- Good: a recent DEV implementation article is shortlisted by tag, its full Markdown body is preserved, and it is labeled documented third-party practice.
+- Good: a recent Bluesky post preserves its original profile/post URL and thread context while remaining community discussion.
 - Base: a GitHub repository without README is omitted while other candidates can continue; it is not model-analyzed.
-- Base: Reddit is degraded because credentials are missing; WaytoAGI, SkillsMP, and GitHub still run and receive their own audit rows.
+- Base: Reddit is degraded because credentials are missing; DEV, GitHub, and Bluesky still run and receive their own audit rows.
+- Base: historical WaytoAGI/SkillsMP signals remain in PostgreSQL but disappear from every current product query.
 - Good: a fresh backend binds its port, serves health/login, and immediately starts one source-config-driven collection round.
 - Good: the user selects one qualified signal, edits three platform drafts and image prompts, saves, then explicitly approves it.
 - Good: a failed 08:00 webhook attempt is recorded and can retry without duplicating a successful digest.
 - Base: model analysis is not configured; collected pending signals remain visible only under `最新采集（待分析）`.
 - Bad: sending pending/rejected items as “今日必读”, consuming a model call before qualification, or claiming first-person verification for third-party evidence.
-- Bad: marking the SkillsMP description as original evidence or silently using an unauthenticated Reddit scraper.
+- Bad: treating a DEV title or Bluesky search hit as sufficient evidence, or silently using an unauthenticated Reddit scraper.
 - Bad: generating packages for every candidate, approving unsaved browser edits, or letting third-party evidence become “我实测”.
 
 ### 6. Tests Required
@@ -104,9 +110,10 @@
 - Test content creation requires qualified frozen evidence, links survive every platform payload, and third-party evidence cannot become first-person testing.
 - Frontend render tests must assert rejected signals never enter outcome sections.
 - Frontend render tests must assert pending signals are visible in `最新采集（待分析）` while remaining absent from qualified outcome sections.
-- Collector contract tests must cover GitHub README/release decoding, SkillsMP-to-`SKILL.md` resolution, Reddit OAuth/allowlist/detail parsing, and authenticated ingestion without network access.
+- Collector contract tests must cover DEV tag deduplication/full-body detail, GitHub README/release decoding, Reddit OAuth/allowlist/detail parsing, Bluesky search/thread parsing, author preservation, and authenticated ingestion without network access.
 - Runner tests must inject the process boundary and assert disabled-source skipping, Reddit allowlist arguments, per-source success/failure audit records, continuation after failure, and whole-round overlap prevention.
-- Live smoke tests are read-only and separate: WaytoAGI detail, SkillsMP GitHub detail, and a known public GitHub README/release. Reddit live success requires real approved OAuth credentials.
+- Store/API tests must assert that retired-source rows cannot enter dashboard, analysis, delivery, or content generation.
+- Live smoke tests are read-only and separate: a current DEV article body, a known public GitHub README/release, and a current Bluesky thread. Reddit live success requires real eligible OAuth credentials.
 - Legacy crawler network tests run only with `RUN_LIVE_TESTS=1`; the default Go suite is deterministic and offline.
 
 ### 7. Wrong vs Correct
@@ -129,12 +136,13 @@ if decision.Eligible {
 ```
 
 ```python
-# Wrong: catalog text or all-site scraping becomes evidence.
-detail = EvidenceDetail(source_url=skill_url, evidence_class="original_documentation")
+# Wrong: list titles or all-site scraping become evidence.
+detail = EvidenceDetail(excerpt=candidate.title, evidence_class="documented_third_party_practice")
 client.get_json("https://www.reddit.com/r/all/new.json")
 
-# Correct: resolve primary documentation and require OAuth allowlist access.
-detail = github.fetch_detail(skillsmp_candidate)
+# Correct: fetch source detail and require OAuth allowlist access.
+detail = dev.fetch_detail(dev_candidate)
+thread = bluesky.fetch_detail(bluesky_candidate)
 reddit = RedditCollector(client, client_id, client_secret, approved_communities)
 ```
 

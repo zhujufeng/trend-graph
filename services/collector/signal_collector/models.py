@@ -13,6 +13,7 @@ class Candidate:
     score: float
     published_at: datetime | None
     updated_at: datetime | None
+    author: str = ""
 
 
 @dataclass(frozen=True)

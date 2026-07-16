@@ -16,6 +16,8 @@ const SOURCE_STYLES = {
   bilibili: 'bg-pink-500/15 text-pink-400 border-pink-500/30',
   github: 'bg-gray-500/15 text-gray-300 border-gray-500/30',
   reddit: 'bg-orange-600/15 text-orange-500 border-orange-600/30',
+  dev: 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30',
+  bluesky: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
   bing: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
   twitter: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
   zhihu: 'bg-blue-600/15 text-blue-500 border-blue-600/30',

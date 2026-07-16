@@ -13,8 +13,8 @@ import (
 
 func TestIngestSignalValidation(t *testing.T) {
 	valid := ingestSignalRequest{
-		Source: "skillsmp", OriginalURL: "https://github.com/example/skill", OriginalTitle: "Example",
-		EvidenceURL: "https://skillsmp.com/skill", EvidenceClass: "catalog_discovery", EvidenceExcerpt: "A discovery record",
+		Source: "dev", OriginalURL: "https://dev.to/example/mcp-workflow", OriginalTitle: "Example",
+		EvidenceURL: "https://dev.to/example/mcp-workflow", EvidenceClass: "documented_third_party_practice", EvidenceExcerpt: "A documented workflow",
 	}
 	if got := valid.validate(); got != "" {
 		t.Fatalf("valid request error = %q", got)
@@ -32,13 +32,13 @@ func TestIngestSignalHTTPReturnsRepositoryCreationResult(t *testing.T) {
 	NewIngestionHandler("collector-secret", signals).Register(router)
 
 	payload := []byte(`{
-		"source":"skillsmp",
-		"originalUrl":"https://github.com/owner/repo/tree/main/skills/mcp",
+		"source":"dev",
+		"originalUrl":"https://dev.to/owner/mcp-workflow",
 		"originalTitle":"MCP Inspector",
 		"score":42,
-		"evidenceUrl":"https://skillsmp.com/skills/owner-repo-skill",
+		"evidenceUrl":"https://dev.to/owner/mcp-workflow",
 		"evidenceTitle":"MCP Inspector",
-		"evidenceClass":"catalog_discovery",
+		"evidenceClass":"documented_third_party_practice",
 		"evidenceExcerpt":"Inspect MCP servers."
 	}`)
 	request := httptest.NewRequest(http.MethodPost, "/internal/ingest/signals", bytes.NewReader(payload))
@@ -50,10 +50,10 @@ func TestIngestSignalHTTPReturnsRepositoryCreationResult(t *testing.T) {
 	if response.Code != http.StatusOK || response.Body.String() != `{"created":false}` {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	if signals.signal.Source != "skillsmp" || signals.signal.OriginalTitle != "MCP Inspector" {
+	if signals.signal.Source != "dev" || signals.signal.OriginalTitle != "MCP Inspector" {
 		t.Fatalf("signal = %#v", signals.signal)
 	}
-	if signals.evidence.EvidenceClass != "catalog_discovery" || signals.evidence.Excerpt != "Inspect MCP servers." {
+	if signals.evidence.EvidenceClass != "documented_third_party_practice" || signals.evidence.Excerpt != "Inspect MCP servers." {
 		t.Fatalf("evidence = %#v", signals.evidence)
 	}
 }

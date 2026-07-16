@@ -4,7 +4,7 @@
 
 Keep the existing React application as the private dashboard and retain the Go service as the system of record for the API, PostgreSQL domain model, authentication, content factory, Feishu delivery, and scheduled digest decisions. Add a Python collector package managed by `uv` for source-specific acquisition and normalization. This introduces Python where it has the strongest fit without creating two competing owners of the data model.
 
-The source design supports WaytoAGI, SkillsMP, GitHub, the approved Reddit community allowlist, and a future X adapter. Linux.do is excluded. X remains important, but its intended keyword-search crawling is deferred from the current delivery and must not block the core source pipeline.
+The source design supports DEV Community, GitHub, the approved Reddit community allowlist, Bluesky, and a future X adapter. Linux.do, WaytoAGI, SkillsMP, Bilibili, and broad generic feeds are excluded. X remains important, but its intended keyword-search crawling is deferred from the current delivery and must not block the core source pipeline.
 
 ## Components and data flow
 
@@ -19,7 +19,7 @@ React dashboard <- authenticated Go API <- PostgreSQL <- signal analysis / conte
 
 1. The collector records a per-source run and gathers lightweight list candidates.
 2. It canonicalizes URLs, applies the source allowlist, topic tracks, recency, and GitHub usability gates.
-3. Shortlisted candidates receive detail collection: WaytoAGI article/tool detail, SkillsMP-linked GitHub skill source, GitHub README/release metadata, or Reddit post/discussion detail.
+3. Shortlisted candidates receive detail collection: DEV article body, GitHub README/release metadata, Reddit post/discussion detail, or Bluesky thread context.
 4. The Go ingestion boundary transactionally deduplicates and stores the signal plus evidence snapshot.
 5. A deterministic rank selects at most 30 newly eligible candidates daily for `deepseek-v4-pro` structured analysis.
 6. The API ranks analyzed signals for dashboard, digest, major-alert review, and a user-initiated content package.
@@ -44,10 +44,10 @@ New tables are preferred over overloading the current `hot_items` schema:
 
 Each Python adapter returns a normalized list candidate and, only when shortlisted, a detail payload. It cannot write to PostgreSQL directly. The Go internal ingestion endpoint validates an internal shared secret, schema, canonical URL, source configuration, and content size before storing it.
 
-- WaytoAGI: curated knowledge/tool list followed by the source article, project, or case detail.
-- SkillsMP: keyword/category discovery followed by the linked GitHub repository and `SKILL.md`; its index entry alone cannot qualify a signal.
+- DEV Community: official Forem API tag discovery followed by the full article body. Qualified evidence is documented third-party practice, never a user-verified claim.
 - GitHub: search/repository metadata plus README and release information; use a server-side token when available, while gracefully reporting rate-limit/degraded state.
 - Reddit: only configured communities; production collection should use an approved API credential path. Without valid credentials, mark the source degraded rather than silently falling back to an unreliable all-site scraper.
+- Bluesky: official public AppView keyword search followed by thread retrieval. Preserve post/thread links and classify the result as community discussion.
 - X: adapter interface only in the current delivery. A later phase may evaluate a read-only keyword-search crawler; it must never perform account interactions and must expose degraded status when its session or acquisition method fails.
 
 ## Analysis and content contracts

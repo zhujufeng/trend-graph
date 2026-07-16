@@ -1,19 +1,26 @@
-# trend-graph 🔥🕸️
+# trend-graph
 
-> 基于 [yupi-hot-monitor](https://github.com/liyupi/yupi-hot-monitor) 二次开发，纯 **Go + TypeScript** 技术栈的 AI 热点监控与关联图谱工具。
->
-> 个人学习 + 可上线产品 + 简历亮点，三位一体。
+> 面向个人创作者的 AI 信号雷达：收集可实践的一手资料，保留原始证据，再生成中文分析和多平台内容素材。
 
 ## 项目简介
 
-输入要监控的关键词，系统会自动从 **9 个信息源**（HackerNews / B 站 / 微博热搜 / GitHub Trending / Reddit / Bing / Twitter / Linux.do / 知乎）聚合抓取热点内容，用 **DeepSeek 大模型**做查询扩展、真假识别、相关性分析和智能摘要，并构建 **关键词 ↔ 实体 ↔ 热点 三重关联图谱**（差异化亮点），通过 WebSocket / 邮件 / 飞书 / 钉钉 实时推送。
+当前产品聚焦 AI、Agent、Skill、MCP 和可落地的效率实践。Go 后端每三小时调度 Python 采集器，先做免费官方 API 搜索，再为候选项抓取正文、README、发布信息或讨论线程；只有保存证据并通过确定性筛选后，才会调用 `deepseek-v4-pro` 分析。
+
+当前采集源：
+
+- DEV Community：无需密钥，按标签搜索并读取完整文章。
+- GitHub：无需密钥也可使用；配置 `GITHUB_TOKEN` 可提高速率限额，详情保留 README 和最新 Release。
+- Bluesky：无需密钥，按关键词搜索并读取讨论线程。
+- Reddit：API 本身可用于符合条件的免费应用，但必须配置自己的 `REDDIT_CLIENT_ID` 和 `REDDIT_CLIENT_SECRET`；缺少凭证时会明确标记为采集失败，不会退回网页爬虫。
+
+WaytoAGI、SkillsMP、Linux.do、B 站和通用热点源不再进入新信号雷达。X 仍是重要来源，但免费的官方 API 不满足关键词搜索需求，因此留待后续只读爬虫任务。
 
 ## 技术栈
 
 | 层 | 技术 |
 |---|---|
-| 后端 | Go 1.22+ · Gin · GORM · PostgreSQL/SQLite |
-| 爬虫 | colly（Go 爬虫框架） |
+| 后端 | Go · Gin · GORM · PostgreSQL |
+| 采集 | Python 3.12+ · uv · 官方只读 API |
 | AI | DeepSeek 官方 API（OpenAI 兼容） |
 | 实时 | gorilla/websocket |
 | 定时 | robfig/cron |
@@ -30,7 +37,8 @@ trend-graph/
 │   ├── cmd/server/         # 程序入口
 │   ├── internal/
 │   │   ├── api/            # HTTP 路由 + Handler
-│   │   ├── crawler/        # 9 个信息源各一个文件
+│   │   ├── radar/          # 新信号分析、调度与推送
+│   │   ├── crawler/        # 保留的旧热点采集代码（新调度不启用）
 │   │   ├── ai/             # DeepSeek 接入
 │   │   ├── analyzer/       # 查询扩展 / 真假识别 / 实体抽取
 │   │   ├── graph/          # 关联图谱构建与查询
@@ -41,6 +49,7 @@ trend-graph/
 │   │   └── types/          # 公共类型定义
 │   └── docs/               # 后端学习笔记
 ├── frontend/                # React + TS 前端
+├── services/collector/      # uv 管理的免费 API 采集器
 ├── docs/                    # 项目文档与学习路线
 ├── docker-compose.yml       # 一键部署
 └── README.md
@@ -65,6 +74,25 @@ trend-graph/
 ## 本地运行
 
 详见 [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)。
+
+启用新采集链路至少需要在后端环境中配置：
+
+```dotenv
+INTERNAL_INGEST_SECRET=请生成一个足够长的随机值
+COLLECTOR_DIR=/absolute/path/to/trend-graph/services/collector
+GITHUB_TOKEN=可选
+REDDIT_CLIENT_ID=仅启用Reddit时必填
+REDDIT_CLIENT_SECRET=仅启用Reddit时必填
+```
+
+独立验证免费 API（不写数据库）：
+
+```bash
+cd services/collector
+uv run --no-sync python -m signal_collector.cli --source dev --query mcp,ai --limit 5
+uv run --no-sync python -m signal_collector.cli --source github --query "agent skill mcp" --limit 5
+uv run --no-sync python -m signal_collector.cli --source bluesky --query "MCP,Claude Code,Codex" --limit 5
+```
 
 ## 部署上线
 

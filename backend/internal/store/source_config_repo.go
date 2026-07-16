@@ -21,15 +21,20 @@ func NewSourceConfigRepo(db *gorm.DB) *SourceConfigRepo {
 // administrator changes made on earlier starts.
 func (r *SourceConfigRepo) EnsureDefaults() error {
 	configs := []SourceConfig{
-		{Source: types.SourceWaytoAGI, Enabled: true, SettingsJSON: "{}"},
-		{Source: types.SourceSkillsMP, Enabled: true, SettingsJSON: "{}"},
+		{Source: types.SourceDEV, Enabled: true, SettingsJSON: "{}"},
 		{Source: types.SourceGitHub, Enabled: true, SettingsJSON: "{}"},
 		{Source: types.SourceReddit, Enabled: true, SettingsJSON: `{"communities":["r/localllama","r/claudeai","r/claudecode","r/ai_agents","r/cursor","r/chatgptcoding"]}`},
+		{Source: types.SourceBluesky, Enabled: true, SettingsJSON: "{}"},
 	}
-	return r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "source"}},
-		DoNothing: true,
-	}).Create(&configs).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("source IN ?", []string{"waytoagi", "skillsmp"}).Delete(&SourceConfig{}).Error; err != nil {
+			return err
+		}
+		return tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "source"}},
+			DoNothing: true,
+		}).Create(&configs).Error
+	})
 }
 
 func (r *SourceConfigRepo) List() ([]SourceConfig, error) {

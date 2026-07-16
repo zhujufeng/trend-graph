@@ -25,7 +25,7 @@ def _recent(candidate: Candidate, cutoff: datetime) -> bool:
 
 
 def _ai_related(candidate: Candidate) -> bool:
-    if candidate.source in {"waytoagi", "reddit"}:
+    if candidate.source == "reddit":
         return True
     text = f"{candidate.title} {candidate.summary}".lower()
     return bool(AI_TOKEN.search(text)) or any(term in text for term in AI_TERMS)

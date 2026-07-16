@@ -11,7 +11,8 @@ Its creator positioning is an evidence-led, practical AI efficiency practitioner
 ## Confirmed Facts
 
 - The user follows X/Twitter, GitHub, and Reddit every day for AI developments, practical skills, agent techniques, and real user discussions. Linux.do discussions are judged too noisy and low-value for this workflow.
-- The user wants to evaluate WaytoAGI and SkillsMP as replacements for Linux.do because they surface curated AI knowledge/tools, agent skills, and learnable Vibe Coding work.
+- WaytoAGI and SkillsMP were evaluated and rejected because their available content is not consistently useful enough for the user's evidence-led workflow. Bilibili is also excluded because the user considers its AI content too dominated by reposting and course sales.
+- The first API-based collection release uses DEV Community, GitHub, Reddit, and Bluesky. DEV, GitHub, and Bluesky provide useful read-only official APIs without a paid subscription; Reddit remains enabled but requires the user's own free eligible OAuth application credentials.
 - The user also creates Xiaohongshu content about AI applications, skills, and agent usage, and wants qualified signals to become source material for posts.
 - Hacker News, Bing, and broad general-news aggregation are noise for this workflow and should not be part of the first product experience.
 - The user wants two scheduled Feishu Webhook digests at 08:00 and 18:00 Asia/Shanghai, plus immediate alerts only for genuinely major signals.
@@ -29,15 +30,15 @@ Its creator positioning is an evidence-led, practical AI efficiency practitioner
 
 The first version must focus on AI-related content only, with sources serving distinct roles:
 
-- WaytoAGI: Chinese curated AI knowledge, tools, cases, and learnable Vibe Coding work. Its items require the same evidence and actionability qualification as any other source.
-- SkillsMP: discovery index for public `SKILL.md` workflows. Its catalog entry is a discovery lead, not a quality endorsement; the system must return to the linked GitHub repository to inspect the actual skill, maintenance, setup, and permissions before qualification.
+- DEV Community: practical articles and implementation write-ups discovered by AI/agent/MCP-related tags. A shortlisted item must preserve the full article body as evidence rather than rely on its title or summary.
 - X/Twitter: an important future source for first-party announcements, developer/researcher signals, and documented real-world practice. The intended acquisition mode is keyword-search crawling rather than author-only tracking, but X collection is deferred from the current delivery. When introduced, posts must preserve their original links and evidence class rather than being treated as user-verified truth.
 - GitHub: directly usable agent, skill, and MCP tooling. Popularity alone is insufficient: selected items need clear installation/use instructions, a concrete use case, and evidence of current maintenance.
 - Reddit: real user discussion, pain points, adoption patterns, and validation.
+- Bluesky: public practitioner discussion discovered through keyword search. Shortlisted posts must preserve their thread context and remain classified as community discussion.
 
 Reddit must use an editable community allowlist rather than `r/all`. The initial list is `r/LocalLLaMA`, `r/ClaudeAI`, `r/ClaudeCode`, `r/AI_Agents`, `r/cursor`, and `r/ChatGPTCoding`.
 
-Linux.do is explicitly excluded from all collection, scheduling, dashboard, and notification paths.
+Linux.do, WaytoAGI, SkillsMP, and Bilibili are explicitly excluded from all collection, scheduling, dashboard, and notification paths.
 
 The homepage must not lead with generic hot-listing or unrelated sources.
 
@@ -142,8 +143,8 @@ The default text model is `deepseek-v4-pro`, using DeepSeek's OpenAI-compatible 
 ## Acceptance Criteria
 
 - [ ] The first screen is recognizably an AI signal radar, not a generic nine-source hot-list.
-- [ ] Linux.do is absent from all enabled collection sources, dashboard filters, scheduled jobs, and notification output.
-- [ ] The approved replacement source set, GitHub, and Reddit are enabled collection sources in the primary experience. X is presented as a deferred future source rather than silently substituted with another source.
+- [ ] Linux.do, WaytoAGI, SkillsMP, and Bilibili are absent from all enabled collection sources, dashboard filters, scheduled jobs, and notification output.
+- [ ] DEV Community, GitHub, Reddit, and Bluesky are enabled collection sources in the primary experience. X is presented as a deferred future source rather than silently substituted with another source.
 - [ ] A surfaced item explains why it is actionable and includes the original source link.
 - [ ] Feishu receives correctly timed 08:00 and 18:00 Asia/Shanghai digests in a testable configuration.
 - [ ] All enabled collection sources run every three hours, with fresh pre-digest runs at 07:40 and 17:40 Asia/Shanghai.
@@ -168,6 +169,6 @@ The default text model is `deepseek-v4-pro`, using DeepSeek's OpenAI-compatible 
 - [ ] One approved signal can produce distinct, reviewable packages for Xiaohongshu, WeChat Official Account, and X without losing source evidence.
 - [ ] Each X package includes Chinese-first copy and an evidence-preserving English counterpart.
 
-## Open Product Decision
+## Resolved Product Decision
 
-- Decide whether WaytoAGI and SkillsMP should both be enabled in the first collection release, or whether to launch one first as a quality experiment.
+- Launch the free official API set with DEV Community, GitHub, Reddit, and Bluesky. Reddit reports degraded health until valid OAuth client credentials are configured. X keyword crawling and YouTube are deferred: X has no suitable free official search API, while YouTube's free Data API does not supply enough primary body/transcript evidence for this evidence-first workflow.

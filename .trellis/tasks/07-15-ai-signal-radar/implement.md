@@ -14,7 +14,7 @@
 
 3. **Python collector service**
    - Create an independently testable `uv`-managed Python package with normalized adapter and detail-fetch contracts.
-   - Implement WaytoAGI detail collection, SkillsMP discovery with GitHub-source verification, GitHub metadata/README/release collection, and the editable Reddit allowlist.
+   - Implement DEV tag discovery/full-article collection, GitHub metadata/README/release collection, the editable Reddit allowlist with OAuth, and Bluesky keyword/thread collection.
    - Add collection run reporting, bounded retries/backoff, and observe-only mode. Defer X keyword-search crawling to a later task.
 
 4. **Qualification and analysis**

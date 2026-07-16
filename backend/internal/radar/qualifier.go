@@ -20,9 +20,6 @@ func Qualify(signal store.Signal, evidence store.EvidenceSnapshot, now time.Time
 	if !types.IsRadarSource(signal.Source) {
 		return QualificationDecision{Reason: "unsupported_source"}
 	}
-	if signal.Source == types.SourceSkillsMP && evidence.EvidenceClass == "catalog_discovery" {
-		return QualificationDecision{Reason: "github_verification_required"}
-	}
 	if timestamp := signalRecency(signal); timestamp.IsZero() || now.Sub(timestamp) > recencyWindow {
 		return QualificationDecision{Reason: "outside_recency_window"}
 	}
@@ -30,7 +27,7 @@ func Qualify(signal store.Signal, evidence store.EvidenceSnapshot, now time.Time
 	if !containsTerm(text, "ai") && !containsAny(text, "agent", "skill", "mcp", "llm", "claude", "codex", "vibe coding", "人工智能", "智能体", "大模型", "提示词", "自动化") {
 		return QualificationDecision{Reason: "outside_ai_tracks"}
 	}
-	if signal.Source == types.SourceGitHub || signal.Source == types.SourceSkillsMP {
+	if signal.Source == types.SourceGitHub {
 		if evidence.EvidenceClass != "original_documentation" {
 			return QualificationDecision{Reason: "original_documentation_required"}
 		}
@@ -39,6 +36,9 @@ func Qualify(signal store.Signal, evidence store.EvidenceSnapshot, now time.Time
 		}
 	}
 	if signal.Source == types.SourceReddit && evidence.EvidenceClass != "community_discussion" {
+		return QualificationDecision{Reason: "community_evidence_required"}
+	}
+	if signal.Source == types.SourceBluesky && evidence.EvidenceClass != "community_discussion" {
 		return QualificationDecision{Reason: "community_evidence_required"}
 	}
 	return QualificationDecision{Eligible: true, Reason: "eligible"}

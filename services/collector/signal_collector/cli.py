@@ -3,13 +3,13 @@ import json
 import os
 from dataclasses import asdict
 
+from .bluesky import BlueskyCollector
+from .dev import DEVCollector
 from .github import GitHubCollector
 from .http import UrllibHTTPClient
 from .ingestion import BackendIngestionClient
 from .qualification import shortlist
 from .reddit import RedditCollector
-from .skillsmp import SkillsMPCollector
-from .waytoagi import WaytoAGICollector
 
 
 DEFAULT_REDDIT_COMMUNITIES = "r/LocalLLaMA,r/ClaudeAI,r/ClaudeCode,r/AI_Agents,r/cursor,r/ChatGPTCoding"
@@ -17,28 +17,28 @@ DEFAULT_REDDIT_COMMUNITIES = "r/LocalLLaMA,r/ClaudeAI,r/ClaudeCode,r/AI_Agents,r
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect AI Signal Radar candidates")
-    parser.add_argument("--source", choices=["waytoagi", "skillsmp", "github", "reddit"], required=True)
+    parser.add_argument("--source", choices=["dev", "github", "reddit", "bluesky"], required=True)
     parser.add_argument("--limit", type=int, default=20)
-    parser.add_argument("--query", help="required for SkillsMP and GitHub search")
+    parser.add_argument("--query", help="required for DEV, GitHub, and Bluesky search")
     parser.add_argument("--communities", help="comma-separated Reddit community allowlist")
     parser.add_argument("--ingest", action="store_true", help="write collected details to the Go backend")
     args = parser.parse_args()
 
     client = UrllibHTTPClient()
-    if args.source == "waytoagi":
-        collector = WaytoAGICollector(client)
-        candidates = collector.list_candidates(args.limit)
-    elif args.source == "skillsmp":
+    if args.source == "dev":
         if not args.query:
-            parser.error("--query is required when --source=skillsmp")
-        collector = SkillsMPCollector(
-            client, os.getenv("SKILLSMP_API_KEY", ""), os.getenv("GITHUB_TOKEN", "")
-        )
+            parser.error("--query is required when --source=dev")
+        collector = DEVCollector(client)
         candidates = collector.search(args.query, args.limit)
     elif args.source == "github":
         if not args.query:
             parser.error("--query is required when --source=github")
         collector = GitHubCollector(client, os.getenv("GITHUB_TOKEN", ""))
+        candidates = collector.search(args.query, args.limit)
+    elif args.source == "bluesky":
+        if not args.query:
+            parser.error("--query is required when --source=bluesky")
+        collector = BlueskyCollector(client)
         candidates = collector.search(args.query, args.limit)
     else:
         communities = (args.communities or os.getenv("REDDIT_COMMUNITIES", DEFAULT_REDDIT_COMMUNITIES)).split(",")

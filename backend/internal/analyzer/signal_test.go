@@ -32,7 +32,7 @@ func TestAnalyzeSignalUsesEvidenceAndReturnsStructuredOutput(t *testing.T) {
 	analyzer := NewAnalyzer(client, "deepseek-v4-pro")
 
 	output, err := analyzer.AnalyzeSignal(context.Background(),
-		SignalInput{Source: "skillsmp", OriginalTitle: "MCP Inspector", OriginalURL: "https://github.com/owner/repo"},
+		SignalInput{Source: "github", OriginalTitle: "MCP Inspector", OriginalURL: "https://github.com/owner/repo"},
 		EvidenceInput{SourceURL: "https://github.com/owner/repo/SKILL.md", EvidenceClass: "original_documentation", Excerpt: "Install and run against a local server."},
 	)
 	if err != nil {

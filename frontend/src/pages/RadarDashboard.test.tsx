@@ -9,7 +9,7 @@ describe('RadarDashboard', () => {
     const signals: RadarSignal[] = [
       {
         id: 7,
-        source: 'skillsmp',
+        source: 'github',
         title: 'MCP Inspector',
         originalUrl: 'https://github.com/owner/repo',
         score: 42,
@@ -36,7 +36,7 @@ describe('RadarDashboard', () => {
       },
     ]
     const sources: SourceConfig[] = [
-      { source: 'skillsmp', enabled: true, settings: {}, updatedAt: '2026-07-15T08:00:00Z' },
+      { source: 'github', enabled: true, settings: {}, updatedAt: '2026-07-15T08:00:00Z' },
       {
         source: 'reddit',
         enabled: true,
@@ -80,9 +80,9 @@ describe('RadarDashboard', () => {
   it('keeps rejected signals out of outcome sections', () => {
     const rejected: RadarSignal = {
       id: 8,
-      source: 'skillsmp',
+      source: 'bluesky',
       title: '仅目录收录、尚无 GitHub 证据',
-      originalUrl: 'https://skillsmp.com/example',
+      originalUrl: 'https://bsky.app/profile/example/post/1',
       score: 10,
       qualification: 'rejected',
       qualificationReason: 'github_verification_required',
@@ -114,9 +114,9 @@ describe('RadarDashboard', () => {
   it('shows newly collected signals while they wait for analysis', () => {
     const pending: RadarSignal = {
       id: 9,
-      source: 'waytoagi',
+      source: 'dev',
       title: '刚采集到的 AI 工作流',
-      originalUrl: 'https://www.waytoagi.com/zh/article/example',
+      originalUrl: 'https://dev.to/example/ai-workflow',
       score: 0,
       qualification: 'pending',
       lifecycleState: 'new',

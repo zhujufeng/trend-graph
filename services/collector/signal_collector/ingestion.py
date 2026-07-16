@@ -15,7 +15,7 @@ class BackendIngestionClient:
                 "source": candidate.source,
                 "originalUrl": candidate.url,
                 "originalTitle": candidate.title,
-                "author": "",
+                "author": candidate.author,
                 "score": candidate.score,
                 "publishedAt": _iso(candidate.published_at),
                 "updatedAt": _iso(candidate.updated_at),
