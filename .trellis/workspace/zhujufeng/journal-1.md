@@ -103,3 +103,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Build personal information radar
+
+**Date**: 2026-07-18
+**Task**: Build personal information radar
+**Branch**: `codex/personal-information-push`
+
+### Summary
+
+Added configurable topics, GitHub Release and RSS collection, shared ranking and delivery dedupe, rebuilt the frontend as a personal inbox, removed unreachable graph UI, and verified Go, Python, frontend, desktop, and mobile flows.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d18ac45` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
