@@ -14,9 +14,9 @@ func TestBuildDigestCapsSignalsAndContentOpportunities(t *testing.T) {
 		items = append(items, store.RadarSignal{
 			Signal: store.Signal{
 				ID: int64(index + 1), Source: "github", OriginalTitle: fmt.Sprintf("AI Tool %d", index+1),
-				OriginalURL: fmt.Sprintf("https://github.com/owner/tool-%d", index+1), Qualification: "qualified",
+				OriginalURL: fmt.Sprintf("https://github.com/owner/tool-%d", index+1), Qualification: "qualified", LifecycleState: store.LifecycleInbox,
 			},
-			Analysis: &store.SignalAnalysis{AnalysisJSON: fmt.Sprintf(`{"whatChanged":"更新 %d","action":"本地试用 %d","contentOpportunity":"选题 %d"}`, index+1, index+1, index+1)},
+			Analysis: &store.SignalAnalysis{AnalysisJSON: fmt.Sprintf(`{"matchedTopics":["主题%d"],"valueScore":%d,"whatChanged":"更新 %d","action":"本地试用 %d","contentOpportunity":"选题 %d"}`, index, 5-index/2, index+1, index+1, index+1)},
 		})
 	}
 
@@ -24,13 +24,13 @@ func TestBuildDigestCapsSignalsAndContentOpportunities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if digest.Title != "AI 信号雷达 · 早报 2026-07-15" {
+	if digest.Title != "个人信息雷达 · 早报 2026-07-15" {
 		t.Fatalf("title = %q", digest.Title)
 	}
 	if len(digest.Signals) != 8 || len(digest.ContentOpportunities) != 3 {
 		t.Fatalf("signals = %d, opportunities = %d", len(digest.Signals), len(digest.ContentOpportunities))
 	}
-	if digest.Signals[0].LinkURL != "https://github.com/owner/tool-1" || digest.Signals[0].Action != "本地试用 1" {
+	if digest.Signals[0].LinkURL != "https://github.com/owner/tool-2" || digest.Signals[0].Action != "本地试用 2" {
 		t.Fatalf("first signal = %#v", digest.Signals[0])
 	}
 }

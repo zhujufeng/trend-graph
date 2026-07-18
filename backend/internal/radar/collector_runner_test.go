@@ -18,11 +18,15 @@ type fakeCollectionStore struct {
 	runs    []store.CollectionRun
 }
 
+type fakeCollectionTopicStore struct{ topics []store.Keyword }
+
+func (f *fakeCollectionTopicStore) List(bool) ([]store.Keyword, error) { return f.topics, nil }
+
 func TestCollectionRunnerSkipsOverlappingRounds(t *testing.T) {
 	repo := &fakeCollectionStore{configs: []store.SourceConfig{{
-		Source: types.SourceGitHub, Enabled: true,
+		Source: types.SourceGitHub, Enabled: true, SettingsJSON: "{}",
 	}}}
-	runner := NewCollectionRunner(repo, "/collector", "http://127.0.0.1:8080", "secret")
+	runner := NewCollectionRunner(repo, &fakeCollectionTopicStore{topics: []store.Keyword{{Word: "AI"}}}, "/collector", "http://127.0.0.1:8080", "secret")
 	started := make(chan struct{})
 	release := make(chan struct{})
 	firstDone := make(chan error, 1)
@@ -68,11 +72,12 @@ func (f *fakeCollectionStore) RecordCollectionRun(run store.CollectionRun) error
 func TestCollectionRunnerRunsEnabledSourcesAndRecordsEachResult(t *testing.T) {
 	repo := &fakeCollectionStore{configs: []store.SourceConfig{
 		{Source: types.SourceDEV, Enabled: true},
-		{Source: types.SourceGitHub, Enabled: true},
+		{Source: types.SourceGitHub, Enabled: true, SettingsJSON: "{}"},
 		{Source: types.SourceReddit, Enabled: true, SettingsJSON: `{"communities":["r/claudeai","r/cursor"]}`},
 		{Source: types.SourceBluesky, Enabled: true},
+		{Source: types.SourceRSS, Enabled: true, SettingsJSON: `{"feeds":["https://example.com/feed.xml"]}`},
 	}}
-	runner := NewCollectionRunner(repo, "/collector", "http://127.0.0.1:8080", "secret")
+	runner := NewCollectionRunner(repo, &fakeCollectionTopicStore{topics: []store.Keyword{{Word: "AI"}, {Word: "机器人"}}}, "/collector", "http://127.0.0.1:8080", "secret")
 	var sources []string
 	var redditArgs []string
 	sourceArgs := map[string][]string{}
@@ -91,14 +96,14 @@ func TestCollectionRunnerRunsEnabledSourcesAndRecordsEachResult(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), types.SourceReddit) {
 		t.Fatalf("Run error = %v, want reddit failure", err)
 	}
-	if want := []string{types.SourceDEV, types.SourceGitHub, types.SourceReddit, types.SourceBluesky}; !reflect.DeepEqual(sources, want) {
+	if want := []string{types.SourceDEV, types.SourceGitHub, types.SourceReddit, types.SourceBluesky, types.SourceRSS}; !reflect.DeepEqual(sources, want) {
 		t.Fatalf("sources = %v, want %v", sources, want)
 	}
 	if got := valueAfter(redditArgs, "--communities"); got != "r/claudeai,r/cursor" {
 		t.Fatalf("reddit communities = %q", got)
 	}
-	if len(repo.runs) != 4 {
-		t.Fatalf("recorded runs = %d, want 4", len(repo.runs))
+	if len(repo.runs) != 5 {
+		t.Fatalf("recorded runs = %d, want 5", len(repo.runs))
 	}
 	if repo.runs[0].Status != "success" || repo.runs[0].ItemCount != 2 {
 		t.Fatalf("github run = %#v", repo.runs[0])
@@ -109,11 +114,37 @@ func TestCollectionRunnerRunsEnabledSourcesAndRecordsEachResult(t *testing.T) {
 	if repo.runs[3].Status != "success" {
 		t.Fatalf("bluesky run = %#v", repo.runs[3])
 	}
-	if got := valueAfter(sourceArgs[types.SourceDEV], "--query"); got != "mcp,claudecode,agents,ai" {
+	if got := valueAfter(sourceArgs[types.SourceDEV], "--query"); got != "AI,机器人" {
 		t.Fatalf("dev query = %q", got)
 	}
-	if got := valueAfter(sourceArgs[types.SourceBluesky], "--query"); got != "MCP,Claude Code,Agent Skills,Codex" {
+	if got := valueAfter(sourceArgs[types.SourceBluesky], "--query"); got != "AI,机器人" {
 		t.Fatalf("bluesky query = %q", got)
+	}
+	if got := valueAfter(sourceArgs[types.SourceRSS], "--feeds"); got != "https://example.com/feed.xml" {
+		t.Fatalf("rss feeds = %q", got)
+	}
+	if got := valueAfter(sourceArgs[types.SourceGitHub], "--topics"); got != "AI,机器人" {
+		t.Fatalf("github topics = %q", got)
+	}
+}
+
+func TestCollectionRunnerSkipsTopicSourcesWhenNoTopics(t *testing.T) {
+	repo := &fakeCollectionStore{configs: []store.SourceConfig{
+		{Source: types.SourceDEV, Enabled: true, SettingsJSON: "{}"},
+		{Source: types.SourceGitHub, Enabled: true, SettingsJSON: `{"repositories":["openai/codex"]}`},
+		{Source: types.SourceRSS, Enabled: true, SettingsJSON: `{"feeds":["https://example.com/feed.xml"]}`},
+	}}
+	runner := NewCollectionRunner(repo, &fakeCollectionTopicStore{}, "/collector", "http://127.0.0.1:8080", "secret")
+	var called []string
+	runner.runCommand = func(_ context.Context, _ string, _ []string, args ...string) ([]byte, error) {
+		called = append(called, valueAfter(args, "--source"))
+		return []byte(`{"collected":1}`), nil
+	}
+	if err := runner.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(called, []string{types.SourceGitHub}) {
+		t.Fatalf("called sources = %v", called)
 	}
 }
 

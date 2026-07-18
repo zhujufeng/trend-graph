@@ -19,7 +19,7 @@ func TestAnalysisRunnerStopsBeforeModelAtDailyQuota(t *testing.T) {
 	data := &fakeAnalysisStore{analysesToday: 30}
 	model := &fakeSignalAnalyzer{}
 
-	result, err := NewAnalysisRunner(data, model, "deepseek-v4-pro").Run(context.Background(), now)
+	result, err := NewAnalysisRunner(data, &fakeCollectionTopicStore{topics: []store.Keyword{{Word: "AI"}}}, model, "deepseek-v4-pro").Run(context.Background(), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestAnalysisRunnerPersistsOneQualifiedStructuredAnalysis(t *testing.T) {
 		OutputTokens: 80,
 	}}
 
-	result, err := NewAnalysisRunner(data, model, "deepseek-v4-pro").Run(context.Background(), now)
+	result, err := NewAnalysisRunner(data, &fakeCollectionTopicStore{topics: []store.Keyword{{Word: "AI"}}}, model, "deepseek-v4-pro").Run(context.Background(), now)
 	if err != nil {
 		t.Fatal(err)
 	}

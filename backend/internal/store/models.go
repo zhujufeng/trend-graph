@@ -192,12 +192,20 @@ type Signal struct {
 	Score               float64    `gorm:"not null;default:0" json:"score"`
 	Qualification       string     `gorm:"type:varchar(32);not null;default:'pending';index" json:"qualification"`
 	QualificationReason string     `gorm:"type:varchar(64);not null;default:''" json:"qualificationReason,omitempty"`
-	LifecycleState      string     `gorm:"type:varchar(32);not null;default:'new';index" json:"lifecycleState"`
+	LifecycleState      string     `gorm:"type:varchar(32);not null;default:'inbox';index" json:"lifecycleState"`
+	LastDeliveredAt     *time.Time `gorm:"index" json:"lastDeliveredAt,omitempty"`
 	CreatedAt           time.Time  `gorm:"autoCreateTime" json:"createdAt"`
 	UpdatedAt           time.Time  `gorm:"autoUpdateTime" json:"updatedAt"`
 }
 
 func (Signal) TableName() string { return "signals" }
+
+const (
+	LifecycleInbox     = "inbox"
+	LifecycleSaved     = "saved"
+	LifecycleDone      = "done"
+	LifecycleDismissed = "dismissed"
+)
 
 // EvidenceSnapshot freezes the exact material used to make an interpretation
 // or create a content package. ContentHash makes unchanged re-fetches cheap.

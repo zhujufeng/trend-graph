@@ -21,7 +21,7 @@ func TestRadarSignalsAPIReturnsEvidenceAndStructuredAnalysis(t *testing.T) {
 			Signal: store.Signal{
 				ID: 7, Source: "github", OriginalTitle: "MCP Inspector",
 				OriginalURL: "https://github.com/owner/repo", Score: 42,
-				Qualification: "qualified", LifecycleState: "new", CreatedAt: now,
+				Qualification: "qualified", LifecycleState: store.LifecycleInbox, CreatedAt: now,
 			},
 			Evidence: &store.EvidenceSnapshot{
 				SourceURL:     "https://github.com/owner/repo/blob/main/SKILL.md",
@@ -83,11 +83,11 @@ func TestRadarSignalLifecycleAcceptsOnlyQualifiedWorkflowStates(t *testing.T) {
 	router := gin.New()
 	NewRadarHandler(repo).Register(router.Group("/api"))
 
-	request := httptest.NewRequest(http.MethodPatch, "/api/radar/signals/7/lifecycle", bytes.NewBufferString(`{"state":"queued"}`))
+	request := httptest.NewRequest(http.MethodPatch, "/api/radar/signals/7/lifecycle", bytes.NewBufferString(`{"state":"saved"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || repo.updatedID != 7 || repo.updatedState != "queued" {
+	if response.Code != http.StatusOK || repo.updatedID != 7 || repo.updatedState != store.LifecycleSaved {
 		t.Fatalf("status=%d id=%d state=%q body=%s", response.Code, repo.updatedID, repo.updatedState, response.Body.String())
 	}
 

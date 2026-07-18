@@ -78,8 +78,8 @@ func (h *ContentPackageHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load signal"})
 		return
 	}
-	if item.Signal.Qualification != "qualified" || item.Signal.LifecycleState != "practiced" || item.Evidence == nil || item.Analysis == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "signal must be practiced with preserved evidence before content generation"})
+	if item.Signal.Qualification != "qualified" || item.Signal.LifecycleState != store.LifecycleDone || item.Evidence == nil || item.Analysis == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "signal must be done with preserved evidence before content generation"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Minute)

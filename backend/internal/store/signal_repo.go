@@ -112,7 +112,7 @@ func (r *SignalRepo) ListPendingSignals(limit int) ([]RadarSignal, error) {
 }
 
 func activeRadarSignals(db *gorm.DB) *gorm.DB {
-	return db.Where("source IN ?", types.RadarSources())
+	return db.Where("source IN ? AND lifecycle_state <> ?", types.RadarSources(), LifecycleDismissed)
 }
 
 func (r *SignalRepo) SetQualification(id int64, qualification, reason string) error {

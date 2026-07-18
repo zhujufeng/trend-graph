@@ -12,6 +12,7 @@ type Digest struct {
 	Title                string
 	Signals              []DigestSignal
 	ContentOpportunities []DigestOpportunity
+	SignalIDs            []int64
 }
 
 type DigestSignal struct {
@@ -40,14 +41,9 @@ func BuildDigest(items []store.RadarSignal, now time.Time) (Digest, error) {
 	if now.Hour() < 12 {
 		edition = "早报"
 	}
-	digest := Digest{Title: fmt.Sprintf("AI 信号雷达 · %s %s", edition, now.Format("2006-01-02"))}
-	for _, item := range items {
-		if len(digest.Signals) >= 8 {
-			break
-		}
-		if item.Signal.Qualification != "qualified" || item.Analysis == nil {
-			continue
-		}
+	digest := Digest{Title: fmt.Sprintf("个人信息雷达 · %s %s", edition, now.Format("2006-01-02"))}
+	for _, ranked := range SelectDigestSignals(items, now, 8) {
+		item := ranked.Item
 		var analysis digestAnalysis
 		if err := json.Unmarshal([]byte(item.Analysis.AnalysisJSON), &analysis); err != nil {
 			return Digest{}, err
@@ -61,6 +57,7 @@ func BuildDigest(items []store.RadarSignal, now time.Time) (Digest, error) {
 			Interpretation: analysis.PracticalUse, Action: analysis.Action,
 			EvidenceClass: evidenceClass, LinkURL: item.Signal.OriginalURL,
 		})
+		digest.SignalIDs = append(digest.SignalIDs, item.Signal.ID)
 		if analysis.ContentOpportunity != "" && len(digest.ContentOpportunities) < 3 {
 			digest.ContentOpportunities = append(digest.ContentOpportunities, DigestOpportunity{
 				Title: item.Signal.OriginalTitle, Angle: analysis.ContentOpportunity,

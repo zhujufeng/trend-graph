@@ -14,6 +14,7 @@ import (
 type deliveryStore interface {
 	Begin(*store.DeliveryRun) (bool, error)
 	Finish(id int64, status, failure string, sentAt *time.Time) error
+	Complete(id int64, signalIDs []int64, sentAt time.Time) error
 	CountSentSince(kind string, since time.Time) (int, error)
 }
 
@@ -52,11 +53,10 @@ func (s *DeliveryService) SendDigest(ctx context.Context, now time.Time) error {
 	if len(digest.Signals) == 0 {
 		return nil
 	}
-	ids := qualifiedSignalIDs(items, 8)
 	return s.send(ctx, store.DeliveryRun{
 		Kind: "digest", IdempotencyKey: fmt.Sprintf("digest:%s:%02d", localNow.Format("2006-01-02"), localNow.Hour()),
-		SignalIDsJSON: mustJSON(ids), Status: "running",
-	}, digestPost(digest))
+		SignalIDsJSON: mustJSON(digest.SignalIDs), Status: "running",
+	}, digest.SignalIDs, digestPost(digest))
 }
 
 func (s *DeliveryService) SendMajorAlerts(ctx context.Context, now time.Time) error {
@@ -76,9 +76,13 @@ func (s *DeliveryService) SendMajorAlerts(ctx context.Context, now time.Time) er
 	if err != nil {
 		return err
 	}
-	for _, item := range items {
+	for _, ranked := range RankSignals(items, now) {
 		if remaining == 0 {
 			break
+		}
+		item := ranked.Item
+		if item.Signal.LastDeliveredAt != nil || item.Signal.LifecycleState == store.LifecycleDone {
+			continue
 		}
 		alert, ok := majorAlert(item)
 		if !ok {
@@ -88,7 +92,7 @@ func (s *DeliveryService) SendMajorAlerts(ctx context.Context, now time.Time) er
 			Kind: "major_alert", IdempotencyKey: fmt.Sprintf("major:%d", item.Signal.ID),
 			SignalIDsJSON: mustJSON([]int64{item.Signal.ID}), Status: "running",
 		}
-		if err := s.send(ctx, run, alert); err != nil {
+		if err := s.send(ctx, run, []int64{item.Signal.ID}, alert); err != nil {
 			return err
 		}
 		remaining--
@@ -96,7 +100,7 @@ func (s *DeliveryService) SendMajorAlerts(ctx context.Context, now time.Time) er
 	return nil
 }
 
-func (s *DeliveryService) send(ctx context.Context, run store.DeliveryRun, payload notify.FeishuPost) error {
+func (s *DeliveryService) send(ctx context.Context, run store.DeliveryRun, signalIDs []int64, payload notify.FeishuPost) error {
 	started, err := s.deliveries.Begin(&run)
 	if err != nil || !started {
 		return err
@@ -106,7 +110,9 @@ func (s *DeliveryService) send(ctx context.Context, run store.DeliveryRun, paylo
 		return err
 	}
 	now := time.Now().UTC()
-	return s.deliveries.Finish(run.ID, "sent", "", &now)
+	// ponytail: a webhook and SQL transaction cannot be atomic; the stable run key
+	// prevents routine retries, while Complete keeps delivery state consistent.
+	return s.deliveries.Complete(run.ID, signalIDs, now)
 }
 
 func majorAlert(item store.RadarSignal) (notify.FeishuPost, bool) {
@@ -124,7 +130,7 @@ func majorAlert(item store.RadarSignal) (notify.FeishuPost, bool) {
 		return notify.FeishuPost{}, false
 	}
 	return notify.FeishuPost{
-		Title: "AI 重磅信号 · " + item.Signal.OriginalTitle,
+		Title: "重磅信号 · " + item.Signal.OriginalTitle,
 		Sections: []notify.FeishuSection{
 			{Text: "事实：" + analysis.WhatChanged},
 			{Text: "判断：" + analysis.AlertReason},
@@ -147,19 +153,6 @@ func digestPost(digest Digest) notify.FeishuPost {
 		post.Sections = append(post.Sections, notify.FeishuSection{Text: "内容机会：" + opportunity.Title + "｜" + opportunity.Angle})
 	}
 	return post
-}
-
-func qualifiedSignalIDs(items []store.RadarSignal, limit int) []int64 {
-	ids := make([]int64, 0, limit)
-	for _, item := range items {
-		if item.Signal.Qualification == "qualified" && item.Analysis != nil {
-			ids = append(ids, item.Signal.ID)
-			if len(ids) == limit {
-				break
-			}
-		}
-	}
-	return ids
 }
 
 func shanghaiDay(now time.Time) (time.Time, time.Time, error) {

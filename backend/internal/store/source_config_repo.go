@@ -25,6 +25,7 @@ func (r *SourceConfigRepo) EnsureDefaults() error {
 		{Source: types.SourceGitHub, Enabled: true, SettingsJSON: "{}"},
 		{Source: types.SourceReddit, Enabled: true, SettingsJSON: `{"communities":["r/localllama","r/claudeai","r/claudecode","r/ai_agents","r/cursor","r/chatgptcoding"]}`},
 		{Source: types.SourceBluesky, Enabled: true, SettingsJSON: "{}"},
+		{Source: types.SourceRSS, Enabled: false, SettingsJSON: `{"feeds":[]}`},
 	}
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("source IN ?", []string{"waytoagi", "skillsmp"}).Delete(&SourceConfig{}).Error; err != nil {

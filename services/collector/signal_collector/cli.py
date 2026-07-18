@@ -10,17 +10,25 @@ from .http import UrllibHTTPClient
 from .ingestion import BackendIngestionClient
 from .qualification import shortlist
 from .reddit import RedditCollector
+from .rss import RSSCollector
 
 
 DEFAULT_REDDIT_COMMUNITIES = "r/LocalLLaMA,r/ClaudeAI,r/ClaudeCode,r/AI_Agents,r/cursor,r/ChatGPTCoding"
 
 
+def _split(value: str | None) -> list[str]:
+    return [item.strip() for item in (value or "").split(",") if item.strip()]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect AI Signal Radar candidates")
-    parser.add_argument("--source", choices=["dev", "github", "reddit", "bluesky"], required=True)
+    parser.add_argument("--source", choices=["dev", "github", "reddit", "bluesky", "rss"], required=True)
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--query", help="required for DEV, GitHub, and Bluesky search")
+    parser.add_argument("--topics", help="comma-separated active topics used for candidate filtering")
     parser.add_argument("--communities", help="comma-separated Reddit community allowlist")
+    parser.add_argument("--repositories", help="comma-separated GitHub repositories to watch for releases")
+    parser.add_argument("--feeds", help="comma-separated RSS/Atom feed URLs")
     parser.add_argument("--ingest", action="store_true", help="write collected details to the Go backend")
     args = parser.parse_args()
 
@@ -31,16 +39,20 @@ def main() -> None:
         collector = DEVCollector(client)
         candidates = collector.search(args.query, args.limit)
     elif args.source == "github":
-        if not args.query:
-            parser.error("--query is required when --source=github")
         collector = GitHubCollector(client, os.getenv("GITHUB_TOKEN", ""))
-        candidates = collector.search(args.query, args.limit)
+        candidates = collector.search(args.query, args.limit) if args.query else []
+        repositories = _split(args.repositories)
+        if repositories:
+            candidates.extend(collector.list_releases(repositories, args.limit))
+        candidates = list({candidate.url: candidate for candidate in candidates}.values())[: args.limit]
+        if not candidates and not args.query and not repositories:
+            parser.error("--query or --repositories is required when --source=github")
     elif args.source == "bluesky":
         if not args.query:
             parser.error("--query is required when --source=bluesky")
         collector = BlueskyCollector(client)
         candidates = collector.search(args.query, args.limit)
-    else:
+    elif args.source == "reddit":
         communities = (args.communities or os.getenv("REDDIT_COMMUNITIES", DEFAULT_REDDIT_COMMUNITIES)).split(",")
         client_id = os.getenv("REDDIT_CLIENT_ID", "")
         client_secret = os.getenv("REDDIT_CLIENT_SECRET", "")
@@ -52,6 +64,12 @@ def main() -> None:
             client_secret,
             communities,
         )
+        candidates = collector.list_candidates(args.limit)
+    else:
+        feeds = _split(args.feeds)
+        if not feeds:
+            parser.error("--feeds is required when --source=rss")
+        collector = RSSCollector(client, feeds)
         candidates = collector.list_candidates(args.limit)
 
     if not args.ingest:
@@ -66,8 +84,9 @@ def main() -> None:
     created = 0
     failed = 0
     processed = 0
-    failures: list[str] = []
-    shortlisted = shortlist(candidates)
+    failures: list[str] = list(getattr(collector, "failures", []))
+    topics = _split(args.topics) or ["AI"]
+    shortlisted = shortlist(candidates, topics)
     for candidate in shortlisted:
         try:
             if backend.ingest(candidate, collector.fetch_detail(candidate)):

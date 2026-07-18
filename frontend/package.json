@@ -14,8 +14,7 @@
     "axios": "^1.7.0",
     "lucide-react": "^0.460.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "reactflow": "^11.11.4"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",

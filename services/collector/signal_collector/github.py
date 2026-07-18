@@ -1,6 +1,6 @@
 import base64
 import binascii
-from datetime import datetime
+from datetime import UTC, datetime
 from urllib.parse import quote, urlencode, urlparse
 
 from .http import HTTPClient
@@ -21,21 +21,22 @@ class GitHubCollector:
             self.headers["Authorization"] = f"Bearer {token}"
 
     def search(self, query: str, limit: int = 20) -> list[Candidate]:
-        if not query.strip():
+        queries = [item.strip() for item in query.split(",") if item.strip()]
+        if not queries:
             raise ValueError("GitHub search query must not be empty")
         limit = max(1, min(limit, 100))
-        params = urlencode(
-            {"q": f"{query} archived:false", "sort": "updated", "order": "desc", "per_page": limit}
-        )
-        payload = self.client.get_json(f"{self.api_url}/search/repositories?{params}", self.headers)
-        candidates: list[Candidate] = []
-        for repo in payload.get("items", []):
-            full_name = repo.get("full_name")
-            html_url = repo.get("html_url")
-            if repo.get("archived") or not isinstance(full_name, str) or not isinstance(html_url, str):
-                continue
-            candidates.append(
-                Candidate(
+        found: dict[str, Candidate] = {}
+        for term in queries:
+            params = urlencode(
+                {"q": f"{term} archived:false", "sort": "updated", "order": "desc", "per_page": limit}
+            )
+            payload = self.client.get_json(f"{self.api_url}/search/repositories?{params}", self.headers)
+            for repo in payload.get("items", []):
+                full_name = repo.get("full_name")
+                html_url = repo.get("html_url")
+                if repo.get("archived") or not isinstance(full_name, str) or not isinstance(html_url, str):
+                    continue
+                found[full_name.lower()] = Candidate(
                     source=self.source,
                     source_id=full_name,
                     title=full_name,
@@ -46,10 +47,58 @@ class GitHubCollector:
                     published_at=_parse_datetime(repo.get("created_at")),
                     updated_at=_parse_datetime(repo.get("pushed_at") or repo.get("updated_at")),
                 )
+        return sorted(
+            found.values(),
+            key=lambda item: item.updated_at or item.published_at or datetime.min.replace(tzinfo=UTC),
+            reverse=True,
+        )[:limit]
+
+    def list_releases(self, repositories: list[str], limit: int = 20) -> list[Candidate]:
+        candidates: list[Candidate] = []
+        for repo in repositories[:20]:
+            releases = self.client.get_json(
+                f"{self.api_url}/repos/{quote(repo, safe='/')}/releases?per_page=1", self.headers
             )
-        return candidates
+            release = releases[0] if isinstance(releases, list) and releases else None
+            if not isinstance(release, dict):
+                continue
+            release_id = release.get("id")
+            html_url = release.get("html_url")
+            if not isinstance(release_id, int) or not isinstance(html_url, str):
+                continue
+            name = str(release.get("name") or release.get("tag_name") or release_id)
+            candidates.append(
+                Candidate(
+                    source=self.source,
+                    source_id=f"{repo}@{release_id}",
+                    title=f"{repo} · {name}",
+                    url=html_url,
+                    discovery_url=html_url,
+                    summary=str(release.get("body") or ""),
+                    score=0,
+                    published_at=_parse_datetime(release.get("published_at") or release.get("created_at")),
+                    updated_at=_parse_datetime(release.get("published_at") or release.get("created_at")),
+                    subscribed=True,
+                )
+            )
+        return candidates[:limit]
 
     def fetch_detail(self, candidate: Candidate) -> EvidenceDetail:
+        if candidate.subscribed:
+            excerpt = candidate.summary.strip()
+            if not excerpt:
+                raise ValueError(f"GitHub release {candidate.source_id} has no readable notes")
+            return EvidenceDetail(
+                source=candidate.source,
+                source_id=candidate.source_id,
+                source_url=candidate.url,
+                title=candidate.title,
+                excerpt=excerpt,
+                evidence_class="original_documentation",
+                requires_github_verification=False,
+                published_at=candidate.published_at,
+                updated_at=candidate.updated_at,
+            )
         repo, document_url = _repository_and_document(candidate.url)
         document_payload = self.client.get_json(document_url, self.headers)
         content = document_payload.get("content") if isinstance(document_payload, dict) else None

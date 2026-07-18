@@ -44,6 +44,19 @@ func (r *DeliveryRepo) Finish(id int64, status, failure string, sentAt *time.Tim
 	}).Error
 }
 
+func (r *DeliveryRepo) Complete(id int64, signalIDs []int64, sentAt time.Time) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if len(signalIDs) > 0 {
+			if err := tx.Model(&Signal{}).Where("id IN ?", signalIDs).Update("last_delivered_at", sentAt).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&DeliveryRun{}).Where("id = ?", id).Updates(map[string]any{
+			"status": "sent", "failure_reason": "", "sent_at": sentAt,
+		}).Error
+	})
+}
+
 func (r *DeliveryRepo) CountSentSince(kind string, since time.Time) (int, error) {
 	var count int64
 	err := r.db.Model(&DeliveryRun{}).

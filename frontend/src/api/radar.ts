@@ -36,6 +36,14 @@ export const updateRedditCommunities = async (communities: string[]): Promise<vo
   await client.put('/source-configs/reddit', { redditCommunities: communities })
 }
 
+export const updateGitHubRepositories = async (repositories: string[]): Promise<void> => {
+  await client.put('/source-configs/github', { githubRepositories: repositories })
+}
+
+export const updateRSSFeeds = async (feeds: string[]): Promise<void> => {
+  await client.put('/source-configs/rss', { rssFeeds: feeds })
+}
+
 export const createContentPackage = async (signalId: number): Promise<ContentPackage> => {
   const response = await client.post<unknown, { data: ContentPackage }>(`/radar/signals/${signalId}/content-packages`)
   return response.data

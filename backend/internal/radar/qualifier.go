@@ -12,11 +12,12 @@ import (
 const recencyWindow = 30 * 24 * time.Hour
 
 type QualificationDecision struct {
-	Eligible bool
-	Reason   string
+	Eligible      bool
+	Reason        string
+	MatchedTopics []string
 }
 
-func Qualify(signal store.Signal, evidence store.EvidenceSnapshot, now time.Time) QualificationDecision {
+func Qualify(signal store.Signal, evidence store.EvidenceSnapshot, topics []string, now time.Time) QualificationDecision {
 	if !types.IsRadarSource(signal.Source) {
 		return QualificationDecision{Reason: "unsupported_source"}
 	}
@@ -24,15 +25,13 @@ func Qualify(signal store.Signal, evidence store.EvidenceSnapshot, now time.Time
 		return QualificationDecision{Reason: "outside_recency_window"}
 	}
 	text := strings.ToLower(signal.OriginalTitle + " " + evidence.Excerpt)
-	if !containsTerm(text, "ai") && !containsAny(text, "agent", "skill", "mcp", "llm", "claude", "codex", "vibe coding", "人工智能", "智能体", "大模型", "提示词", "自动化") {
-		return QualificationDecision{Reason: "outside_ai_tracks"}
+	matched := matchTopics(text, topics)
+	if len(matched) == 0 && !isWatchedGitHubRelease(signal) {
+		return QualificationDecision{Reason: "outside_active_topics"}
 	}
 	if signal.Source == types.SourceGitHub {
 		if evidence.EvidenceClass != "original_documentation" {
 			return QualificationDecision{Reason: "original_documentation_required"}
-		}
-		if !containsAny(text, "install", "setup", "usage", "quickstart", "run ", "安装", "配置", "使用") {
-			return QualificationDecision{Reason: "missing_usable_setup"}
 		}
 	}
 	if signal.Source == types.SourceReddit && evidence.EvidenceClass != "community_discussion" {
@@ -41,7 +40,33 @@ func Qualify(signal store.Signal, evidence store.EvidenceSnapshot, now time.Time
 	if signal.Source == types.SourceBluesky && evidence.EvidenceClass != "community_discussion" {
 		return QualificationDecision{Reason: "community_evidence_required"}
 	}
-	return QualificationDecision{Eligible: true, Reason: "eligible"}
+	if signal.Source == types.SourceRSS && evidence.EvidenceClass != "publisher_feed" {
+		return QualificationDecision{Reason: "publisher_evidence_required"}
+	}
+	return QualificationDecision{Eligible: true, Reason: "eligible", MatchedTopics: matched}
+}
+
+func matchTopics(text string, topics []string) []string {
+	matched := make([]string, 0, len(topics))
+	for _, topic := range topics {
+		trimmed := strings.TrimSpace(topic)
+		if trimmed == "" {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		isMatch := strings.Contains(text, lower)
+		if strings.EqualFold(trimmed, "AI") {
+			isMatch = containsTerm(text, "ai") || containsAny(text, "agent", "skill", "mcp", "llm", "claude", "codex", "vibe coding", "人工智能", "智能体", "大模型", "提示词", "自动化")
+		}
+		if isMatch {
+			matched = append(matched, trimmed)
+		}
+	}
+	return matched
+}
+
+func isWatchedGitHubRelease(signal store.Signal) bool {
+	return signal.Source == types.SourceGitHub && strings.Contains(strings.ToLower(signal.OriginalURL), "/releases/")
 }
 
 func signalRecency(signal store.Signal) time.Time {

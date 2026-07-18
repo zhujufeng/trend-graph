@@ -1,121 +1,141 @@
 # trend-graph
 
-> 面向个人创作者的 AI 信号雷达：收集可实践的一手资料，保留原始证据，再生成中文分析和多平台内容素材。
+一个面向个人使用的信息雷达：按你关注的主题收集公开信息，保留来源证据，用 AI 判断实际价值，再把少量高价值内容送进收件箱和飞书早晚报。
 
-## 项目简介
+它不再把“小红书选题”当作产品主线。内容生成仍然保留，但只是你处理完一条信息后的可选动作。
 
-当前产品聚焦 AI、Agent、Skill、MCP 和可落地的效率实践。Go 后端每三小时调度 Python 采集器，先做免费官方 API 搜索，再为候选项抓取正文、README、发布信息或讨论线程；只有保存证据并通过确定性筛选后，才会调用 `deepseek-v4-pro` 分析。
+## 产品流程
 
-当前采集源：
+```text
+关注主题 / 明确订阅
+        ↓
+公开 API 与 RSS/Atom 采集
+        ↓
+30 天时效 + 主题 + 来源证据筛选
+        ↓
+AI 提取事实、匹配主题、价值分与行动建议
+        ↓
+排序、URL/标题去重、每主题限额
+        ↓
+个人收件箱 + 飞书早晚报 / 重磅提醒
+```
 
-- DEV Community：无需密钥，按标签搜索并读取完整文章。
-- GitHub：无需密钥也可使用；配置 `GITHUB_TOKEN` 可提高速率限额，详情保留 README 和最新 Release。
-- Bluesky：无需密钥，按关键词搜索并读取讨论线程。
-- Reddit：API 本身可用于符合条件的免费应用，但必须配置自己的 `REDDIT_CLIENT_ID` 和 `REDDIT_CLIENT_SECRET`；缺少凭证时会明确标记为采集失败，不会退回网页爬虫。
+收件箱只有四个状态：
 
-WaytoAGI、SkillsMP、Linux.do、B 站和通用热点源不再进入新信号雷达。X 仍是重要来源，但免费的官方 API 不满足关键词搜索需求，因此留待后续只读爬虫任务。
+- `inbox`：新收件；
+- `saved`：稍后处理；
+- `done`：已经处理，可选生成内容草稿；
+- `dismissed`：忽略，不再出现在当前产品列表。
 
-## 技术栈
+## 当前信息来源
+
+| 来源 | 公开接口 | 用途 | 密钥 |
+| --- | --- | --- | --- |
+| DEV Community | DEV API | 按主题发现并读取完整文章 | 不需要 |
+| GitHub | REST Search、Contents、Releases | 主题仓库发现、README 证据、明确仓库的最新 Release | `GITHUB_TOKEN` 可选，建议配置以提高限额 |
+| Bluesky | 官方 AppView API | 搜索帖子并读取讨论线程 | 不需要 |
+| Reddit | 官方 OAuth API | 只读取配置的社区白名单 | 必须配置自己的 OAuth 凭据 |
+| RSS / Atom | 发布方 Feed | 订阅博客、媒体、项目公告和任何垂直领域来源 | 不需要 |
+
+GitHub 采用三条简单而稳定的链路：按关注主题串行调用仓库搜索；用 Contents API 读取 README；对设置中明确订阅的 `owner/repo` 获取最新 Release。它没有导入 Stars、用户 Events 或 Discussions，避免把个人信息流做成噪声聚合器。
+
+## 排序与推送规则
+
+AI 为合格信息输出 `matchedTopics` 和 `valueScore`（1–5）。后端统一计算：
+
+```text
+rankScore = valueScore × 10 + 时效加分 + 重磅加分
+```
+
+- 24 小时内 `+8`，7 天内 `+5`，30 天内 `+1`；
+- 合格重磅提醒 `+20`；
+- 同 URL 或规范化标题只保留最高分的一条；
+- 摘要最多 8 条，每个首要主题最多 2 条；
+- 成功推送后写入 `lastDeliveredAt`，重磅提醒和后续摘要都不会重复发送；失败不会标记，仍可重试。
+
+## 技术结构
 
 | 层 | 技术 |
-|---|---|
+| --- | --- |
 | 后端 | Go · Gin · GORM · PostgreSQL |
-| 采集 | Python 3.12+ · uv · 官方只读 API |
-| AI | DeepSeek 官方 API（OpenAI 兼容） |
-| 实时 | gorilla/websocket |
-| 定时 | robfig/cron |
-| 前端 | React 19 · TypeScript · Vite · Aceternity UI · TailwindCSS |
-| 图谱 | React Flow（关联图谱） · ECharts（趋势图） |
-| 通知 | WebSocket · SMTP 邮件 · 飞书/钉钉 Webhook |
-| 部署 | VPS · Docker Compose |
+| 采集器 | Python 3.12+ · uv · 标准库 RSS 解析 |
+| AI | DeepSeek OpenAI-compatible API |
+| 前端 | React 19 · TypeScript · Vite · Tailwind CSS |
+| 调度 | robfig/cron，Go 负责调度和来源健康，Python 负责来源适配 |
+| 通知 | 飞书富文本 Webhook |
 
-## 项目结构
-
-```
-trend-graph/
-├── backend/                 # Go 后端
-│   ├── cmd/server/         # 程序入口
-│   ├── internal/
-│   │   ├── api/            # HTTP 路由 + Handler
-│   │   ├── radar/          # 新信号分析、调度与推送
-│   │   ├── crawler/        # 保留的旧热点采集代码（新调度不启用）
-│   │   ├── ai/             # DeepSeek 接入
-│   │   ├── analyzer/       # 查询扩展 / 真假识别 / 实体抽取
-│   │   ├── graph/          # 关联图谱构建与查询
-│   │   ├── notify/         # WebSocket / 邮件 / 飞书 / 钉钉
-│   │   ├── scheduler/      # cron 定时任务
-│   │   ├── store/          # 数据库（GORM）
-│   │   ├── config/         # 配置加载
-│   │   └── types/          # 公共类型定义
-│   └── docs/               # 后端学习笔记
-├── frontend/                # React + TS 前端
-├── services/collector/      # uv 管理的免费 API 采集器
-├── docs/                    # 项目文档与学习路线
-├── docker-compose.yml       # 一键部署
-└── README.md
-```
-
-## 学习路线（10 个阶段）
-
-详见 [docs/ROADMAP.md](docs/ROADMAP.md)。
-
-- [x] 阶段 0：项目骨架 + 环境准备
-- [x] 阶段 1：HackerNews 单源抓取 + Gin 第一个 API
-- [x] 阶段 2：数据库设计（GORM + PostgreSQL）
-- [x] 阶段 3：接入 DeepSeek（查询扩展 + 摘要）
-- [x] 阶段 4：React 前端骨架 + 热点列表页
-- [x] 阶段 5：扩展其余 8 个信息源
-- [x] 阶段 6：WebSocket 实时推送
-- [x] 阶段 7：定时任务 + 多渠道通知
-- [x] 阶段 8：🎯 关联图谱差异化亮点
-- [x] 阶段 9：VPS 直接部署（systemd + nginx + Caddy HTTPS）
-- [x] 阶段 10：README + 教学文档 + 简历亮点话术
+旧热点、图谱和通用爬虫后端暂时保留用于历史数据兼容，但已经不进入新的收件箱前端和自动采集链路。
 
 ## 本地运行
 
-详见 [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)。
+### 1. 环境
 
-启用新采集链路至少需要在后端环境中配置：
+- Go 1.26+
+- Python 3.12+ 与 `uv`
+- Node.js 20+
+- PostgreSQL 15+
+
+复制后端环境配置：
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+至少填写：
 
 ```dotenv
-INTERNAL_INGEST_SECRET=请生成一个足够长的随机值
-COLLECTOR_DIR=/absolute/path/to/trend-graph/services/collector
+DATABASE_URL=host=localhost port=5432 user=postgres password=postgres dbname=trend_graph sslmode=disable timezone=Asia/Shanghai
+ADMIN_PASSWORD=replace-with-a-long-random-password
+SESSION_COOKIE_SECURE=false
+INTERNAL_INGEST_SECRET=replace-with-a-second-random-secret
+COLLECTOR_DIR=../services/collector
+DEEPSEEK_API_KEY=可选；不配置时采集结果停留在等待分析
 GITHUB_TOKEN=可选
 REDDIT_CLIENT_ID=仅启用Reddit时必填
 REDDIT_CLIENT_SECRET=仅启用Reddit时必填
 ```
 
-独立验证免费 API（不写数据库）：
+主题、GitHub 仓库、RSS Feed 与 Reddit 社区都在网页设置中维护，不需要写入环境变量。
+
+### 2. 启动
+
+```bash
+cd backend
+go run ./cmd/server
+```
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+首次数据库为空时会创建 `AI` 默认主题。以后即使你删除全部主题，重启也不会擅自恢复；没有主题时，系统只采集你明确订阅的 GitHub Release。
+
+### 3. 独立验证采集器
+
+以下命令只输出 JSON，不写数据库（未提供内部写入配置时）：
 
 ```bash
 cd services/collector
-uv run --no-sync python -m signal_collector.cli --source dev --query mcp,ai --limit 5
-uv run --no-sync python -m signal_collector.cli --source github --query "agent skill mcp" --limit 5
-uv run --no-sync python -m signal_collector.cli --source bluesky --query "MCP,Claude Code,Codex" --limit 5
+uv run --no-sync python -m signal_collector.cli --source dev --topics "AI,机器人" --query "AI,机器人" --limit 5
+uv run --no-sync python -m signal_collector.cli --source github --topics "AI,数据库" --repositories "openai/codex" --limit 5
+uv run --no-sync python -m signal_collector.cli --source rss --topics "机器人" --feeds "https://example.com/feed.xml" --limit 5
 ```
 
-## 部署上线
+## 验证
 
-详见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)（VPS + systemd + nginx + Caddy HTTPS）。
+```bash
+cd backend
+GOCACHE=/tmp/trend-graph-go-cache go test ./...
 
-## 学习文档
+cd ../services/collector
+UV_CACHE_DIR=/tmp/trend-graph-uv-cache uv run --no-sync python -m unittest discover -s tests -v
 
-每个阶段都有详细教学笔记，配合源码阅读：
+cd ../../frontend
+npm test -- --run
+npm run build
+npm run lint
+```
 
-- [docs/ROADMAP.md](docs/ROADMAP.md) — 10 阶段学习路线总览
-- [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) — 本地环境准备
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — VPS 部署指南
-- [docs/STAGE-1.md](docs/STAGE-1.md) — HackerNews 单源抓取 + Gin
-- [docs/STAGE-2.md](docs/STAGE-2.md) — GORM + PostgreSQL 持久化
-- [docs/STAGE-3.md](docs/STAGE-3.md) — DeepSeek AI 接入
-- [docs/STAGE-4.md](docs/STAGE-4.md) — React + TS 前端骨架
-- [docs/STAGE-5.md](docs/STAGE-5.md) — 9 源并发抓取
-- [docs/STAGE-6.md](docs/STAGE-6.md) — WebSocket 实时推送
-- [docs/STAGE-7.md](docs/STAGE-7.md) — 定时任务 + 多渠道通知
-- [docs/STAGE-8.md](docs/STAGE-8.md) — 关联图谱差异化亮点
-- [docs/LEARNING_NOTES.md](docs/LEARNING_NOTES.md) — Go + TS 知识图谱
-- [docs/RESUME.md](docs/RESUME.md) — 简历亮点话术 + 面试题
-
-## 致谢
-
-本项目灵感来源于 [程序员鱼皮](https://github.com/liyupi) 的 [yupi-hot-monitor](https://github.com/liyupi/yupi-hot-monitor) 教学项目，特此致谢。本项目在其基础上重写了技术栈（Node.js → Go），并新增了关联图谱差异化能力。
+更完整的本地环境说明见 [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)，部署说明见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。

@@ -20,6 +20,17 @@ func NewKeywordRepo(db *gorm.DB) *KeywordRepo {
 	return &KeywordRepo{db: db}
 }
 
+// EnsureDefault creates the initial topic once. Unscoped count means a user
+// who deliberately deletes every topic will not get AI recreated on restart.
+func (r *KeywordRepo) EnsureDefault() error {
+	var count int64
+	if err := r.db.Unscoped().Model(&Keyword{}).Count(&count).Error; err != nil || count > 0 {
+		return err
+	}
+	_, err := r.Create("AI", "人工智能、Agent、LLM 与相关应用", 180)
+	return err
+}
+
 // Create 增加一个监控关键词
 func (r *KeywordRepo) Create(word, note string, intervalMin int) (*Keyword, error) {
 	if intervalMin <= 0 {

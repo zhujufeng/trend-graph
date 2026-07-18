@@ -139,6 +139,43 @@ func TestSourceConfigAPIRejectsUnsupportedSource(t *testing.T) {
 	}
 }
 
+func TestSourceConfigAPIValidatesGitHubRepositoriesAndRSSFeeds(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name   string
+		source string
+		body   string
+		want   string
+	}{
+		{name: "github", source: "github", body: `{"githubRepositories":[" OpenAI/Codex ","openai/codex"]}`, want: `{"repositories":["openai/codex"]}`},
+		{name: "rss", source: "rss", body: `{"rssFeeds":["https://example.com/feed.xml","https://example.com/feed.xml"]}`, want: `{"feeds":["https://example.com/feed.xml"]}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &fakeSourceConfigStore{configs: []store.SourceConfig{{Source: test.source, Enabled: true, SettingsJSON: "{}"}}}
+			router := gin.New()
+			NewSourceConfigHandler(repo).Register(router.Group("/api"))
+			request := httptest.NewRequest(http.MethodPut, "/api/source-configs/"+test.source, bytes.NewBufferString(test.body))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusOK || repo.config.SettingsJSON != test.want {
+				t.Fatalf("status = %d, settings = %s, body = %s", response.Code, repo.config.SettingsJSON, response.Body.String())
+			}
+		})
+	}
+
+	router := gin.New()
+	NewSourceConfigHandler(&fakeSourceConfigStore{configs: []store.SourceConfig{{Source: "rss", SettingsJSON: "{}"}}}).Register(router.Group("/api"))
+	request := httptest.NewRequest(http.MethodPut, "/api/source-configs/rss", bytes.NewBufferString(`{"rssFeeds":["file:///etc/passwd"]}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid feed status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
 type fakeSourceConfigStore struct {
 	configs []store.SourceConfig
 	runs    map[string]store.CollectionRun

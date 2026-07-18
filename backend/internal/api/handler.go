@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -197,11 +198,26 @@ func (h *Handler) CreateKeyword(c *gin.Context) {
 		Note        string `json:"note"`
 		IntervalMin int    `json:"intervalMin"`
 	}
-	if err := c.ShouldBindJSON(&body); err != nil || body.Word == "" {
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
+	body.Word = strings.TrimSpace(body.Word)
+	body.Note = strings.TrimSpace(body.Note)
+	if body.Word == "" || len([]rune(body.Word)) > 128 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "word 必填"})
 		return
 	}
-	k, err := h.keywordRepo.Create(body.Word, body.Note, body.IntervalMin)
+	active, err := h.keywordRepo.List(true)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+		return
+	}
+	if len(active) >= 10 {
+		c.JSON(http.StatusConflict, gin.H{"error": "最多启用 10 个关注主题"})
+		return
+	}
+	k, err := h.keywordRepo.Create(body.Word, body.Note, 180)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "create failed", "detail": err.Error()})
 		return
@@ -246,6 +262,21 @@ func (h *Handler) UpdateKeyword(c *gin.Context) {
 		return
 	}
 	if body.Active != nil {
+		if *body.Active {
+			active, err := h.keywordRepo.List(true)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+				return
+			}
+			alreadyActive := false
+			for _, topic := range active {
+				alreadyActive = alreadyActive || topic.ID == id
+			}
+			if !alreadyActive && len(active) >= 10 {
+				c.JSON(http.StatusConflict, gin.H{"error": "最多启用 10 个关注主题"})
+				return
+			}
+		}
 		if err := h.keywordRepo.UpdateActive(id, *body.Active); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "update failed", "detail": err.Error()})
 			return

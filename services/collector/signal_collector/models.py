@@ -14,6 +14,7 @@ class Candidate:
     published_at: datetime | None
     updated_at: datetime | None
     author: str = ""
+    subscribed: bool = False
 
 
 @dataclass(frozen=True)

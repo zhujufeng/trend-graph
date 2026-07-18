@@ -37,7 +37,13 @@ class FakeClient:
             content = "# MCP Inspector\n\nInstall with uv. Run against a local MCP server."
             return {"encoding": "base64", "content": base64.b64encode(content.encode()).decode()}
         if "/releases?" in url:
-            return [{"name": "v1.2", "body": "Adds local inspection", "published_at": "2026-07-14T00:00:00Z"}]
+            return [{
+                "id": 12,
+                "name": "v1.2",
+                "body": "Adds local inspection",
+                "published_at": "2026-07-14T00:00:00Z",
+                "html_url": "https://github.com/owner/mcp-inspector/releases/tag/v1.2",
+            }]
         raise AssertionError(url)
 
     def get_text(self, url: str, headers=None) -> str:
@@ -62,6 +68,22 @@ class GitHubCollectorTests(unittest.TestCase):
         self.assertTrue(any("sort=updated" in url and "per_page=5" in url for url in client.urls))
         self.assertFalse(any(url.endswith("/repos/owner/mcp-inspector") for url in client.urls))
 
+    def test_searches_each_topic_and_creates_release_candidates_for_watchlist(self) -> None:
+        client = FakeClient()
+        collector = GitHubCollector(client)
+
+        candidates = collector.search("AI,机器人", limit=5)
+        releases = collector.list_releases(["owner/mcp-inspector"], limit=5)
+        detail = collector.fetch_detail(releases[0])
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(sum("/search/repositories?" in url for url in client.urls), 2)
+        self.assertEqual(releases[0].source_id, "owner/mcp-inspector@12")
+        self.assertTrue(releases[0].subscribed)
+        self.assertEqual(releases[0].url, "https://github.com/owner/mcp-inspector/releases/tag/v1.2")
+        self.assertEqual(detail.excerpt, "Adds local inspection")
+        self.assertEqual(sum("/readme" in url for url in client.urls), 0)
+
     def test_cli_continues_after_one_detail_failure(self) -> None:
         first = _candidate("missing")
         second = _candidate("working")
@@ -76,7 +98,7 @@ class GitHubCollectorTests(unittest.TestCase):
             patch.object(cli, "UrllibHTTPClient", return_value=object()),
             patch.object(cli, "GitHubCollector", return_value=collector),
             patch.object(cli, "BackendIngestionClient", return_value=backend),
-            patch.object(cli, "shortlist", side_effect=lambda candidates: candidates),
+            patch.object(cli, "shortlist", side_effect=lambda candidates, topics: candidates),
             redirect_stdout(stdout),
             redirect_stderr(stderr),
         ):
@@ -96,7 +118,7 @@ class GitHubCollectorTests(unittest.TestCase):
             patch.object(cli, "UrllibHTTPClient", return_value=object()),
             patch.object(cli, "GitHubCollector", return_value=_BatchCollector([candidate], {"missing"})),
             patch.object(cli, "BackendIngestionClient", return_value=_Backend()),
-            patch.object(cli, "shortlist", side_effect=lambda candidates: candidates),
+            patch.object(cli, "shortlist", side_effect=lambda candidates, topics: candidates),
             redirect_stdout(io.StringIO()),
             redirect_stderr(io.StringIO()),
         ):

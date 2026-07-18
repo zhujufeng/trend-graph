@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,8 +37,10 @@ func (h *SourceConfigHandler) Register(api *gin.RouterGroup) {
 }
 
 type updateSourceConfigRequest struct {
-	Enabled           *bool    `json:"enabled"`
-	RedditCommunities []string `json:"redditCommunities"`
+	Enabled            *bool    `json:"enabled"`
+	RedditCommunities  []string `json:"redditCommunities"`
+	GitHubRepositories []string `json:"githubRepositories"`
+	RSSFeeds           []string `json:"rssFeeds"`
 }
 
 type sourceConfigResponse struct {
@@ -86,12 +90,14 @@ func (h *SourceConfigHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid source config payload"})
 		return
 	}
-	if req.Enabled == nil && req.RedditCommunities == nil {
+	if req.Enabled == nil && req.RedditCommunities == nil && req.GitHubRepositories == nil && req.RSSFeeds == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one setting is required"})
 		return
 	}
-	if source != types.SourceReddit && req.RedditCommunities != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "redditCommunities is only valid for reddit"})
+	if (req.RedditCommunities != nil && source != types.SourceReddit) ||
+		(req.GitHubRepositories != nil && source != types.SourceGitHub) ||
+		(req.RSSFeeds != nil && source != types.SourceRSS) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "settings do not match source"})
 		return
 	}
 
@@ -112,6 +118,28 @@ func (h *SourceConfigHandler) Update(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not encode source settings"})
 			return
 		}
+		config.SettingsJSON = string(settings)
+	}
+	if source == types.SourceGitHub && req.GitHubRepositories != nil {
+		repositories, err := normalizeGitHubRepositories(req.GitHubRepositories)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		settings, _ := json.Marshal(struct {
+			Repositories []string `json:"repositories"`
+		}{Repositories: repositories})
+		config.SettingsJSON = string(settings)
+	}
+	if source == types.SourceRSS && req.RSSFeeds != nil {
+		feeds, err := normalizeFeedURLs(req.RSSFeeds)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		settings, _ := json.Marshal(struct {
+			Feeds []string `json:"feeds"`
+		}{Feeds: feeds})
 		config.SettingsJSON = string(settings)
 	}
 
@@ -150,6 +178,45 @@ func normalizeRedditCommunities(communities []string) []string {
 		}
 	}
 	return store.NormalizedAllowlist(normalized)
+}
+
+var githubRepositoryPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+
+func normalizeGitHubRepositories(values []string) ([]string, error) {
+	result := store.NormalizedAllowlist(values)
+	if len(result) > 20 {
+		return nil, errors.New("githubRepositories supports at most 20 entries")
+	}
+	for _, repository := range result {
+		if !githubRepositoryPattern.MatchString(repository) {
+			return nil, errors.New("githubRepositories must use owner/repo format")
+		}
+	}
+	return result, nil
+}
+
+func normalizeFeedURLs(values []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		parsed, err := url.Parse(value)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
+			return nil, errors.New("rssFeeds must contain valid HTTP(S) URLs")
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	if len(result) > 20 {
+		return nil, errors.New("rssFeeds supports at most 20 entries")
+	}
+	return result, nil
 }
 
 func sourceConfigView(config store.SourceConfig) (sourceConfigResponse, error) {

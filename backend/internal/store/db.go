@@ -70,7 +70,24 @@ func New(dsn string) (*gorm.DB, error) {
 	); err != nil {
 		return nil, fmt.Errorf("自动迁移失败: %w", err)
 	}
+	if err := migrateSignalLifecycle(db); err != nil {
+		return nil, fmt.Errorf("迁移信号状态失败: %w", err)
+	}
 	log.Println("数据库初始化 + AutoMigrate 完成")
 
 	return db, nil
+}
+
+func migrateSignalLifecycle(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		for oldState, newState := range map[string]string{
+			"new": LifecycleInbox, "queued": LifecycleSaved, "practiced": LifecycleDone,
+		} {
+			if err := tx.Model(&Signal{}).Where("lifecycle_state = ?", oldState).
+				Update("lifecycle_state", newState).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

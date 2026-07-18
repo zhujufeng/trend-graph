@@ -10,6 +10,8 @@ import (
 
 func TestAnalyzeSignalUsesEvidenceAndReturnsStructuredOutput(t *testing.T) {
 	client := &captureAIClient{content: `{
+		"matchedTopics":["AI"],
+		"valueScore":4,
 		"evidenceClass":"original_documentation",
 		"facts":[{"claim":"提供本地 MCP 检查流程","sourceUrl":"https://github.com/owner/repo/SKILL.md"}],
 		"whatChanged":"新增可复现检查流程",
@@ -32,7 +34,7 @@ func TestAnalyzeSignalUsesEvidenceAndReturnsStructuredOutput(t *testing.T) {
 	analyzer := NewAnalyzer(client, "deepseek-v4-pro")
 
 	output, err := analyzer.AnalyzeSignal(context.Background(),
-		SignalInput{Source: "github", OriginalTitle: "MCP Inspector", OriginalURL: "https://github.com/owner/repo"},
+		SignalInput{Source: "github", OriginalTitle: "MCP Inspector", OriginalURL: "https://github.com/owner/repo", Topics: []string{"AI", "机器人"}},
 		EvidenceInput{SourceURL: "https://github.com/owner/repo/SKILL.md", EvidenceClass: "original_documentation", Excerpt: "Install and run against a local server."},
 	)
 	if err != nil {
@@ -42,7 +44,7 @@ func TestAnalyzeSignalUsesEvidenceAndReturnsStructuredOutput(t *testing.T) {
 		t.Fatalf("request = %#v", client.request)
 	}
 	userPrompt := client.request.Messages[len(client.request.Messages)-1].Content
-	if !strings.Contains(userPrompt, "Install and run against a local server.") || !strings.Contains(userPrompt, "original_documentation") {
+	if !strings.Contains(userPrompt, "Install and run against a local server.") || !strings.Contains(userPrompt, "original_documentation") || !strings.Contains(userPrompt, "AI、机器人") {
 		t.Fatalf("user prompt = %s", userPrompt)
 	}
 	if !strings.Contains(string(output.JSON), `"action":"按 SKILL.md 在本地复现"`) || output.InputTokens != 120 || output.OutputTokens != 80 {
@@ -52,6 +54,7 @@ func TestAnalyzeSignalUsesEvidenceAndReturnsStructuredOutput(t *testing.T) {
 
 func TestAnalyzeSignalRejectsAlertWithoutExplicitCategory(t *testing.T) {
 	client := &captureAIClient{content: `{
+		"matchedTopics":["AI"],"valueScore":5,
 		"evidenceClass":"original_documentation",
 		"facts":[{"claim":"正式发布","sourceUrl":"https://example.com/docs"}],
 		"whatChanged":"新模型发布","audience":"开发者","practicalUse":"迁移模型","action":"阅读迁移文档",
@@ -59,11 +62,47 @@ func TestAnalyzeSignalRejectsAlertWithoutExplicitCategory(t *testing.T) {
 	}`}
 	analyzer := NewAnalyzer(client, "deepseek-v4-pro")
 	_, err := analyzer.AnalyzeSignal(context.Background(),
-		SignalInput{OriginalTitle: "Model", OriginalURL: "https://example.com/release"},
+		SignalInput{OriginalTitle: "Model", OriginalURL: "https://example.com/release", Topics: []string{"AI"}},
 		EvidenceInput{SourceURL: "https://example.com/docs", EvidenceClass: "original_documentation", Excerpt: "Released."},
 	)
 	if err == nil {
 		t.Fatal("expected missing alert category to be rejected")
+	}
+}
+
+func TestAnalyzeSignalRejectsUnknownTopicAndInvalidValueScore(t *testing.T) {
+	base := `{
+		"matchedTopics":["unknown"],"valueScore":4,
+		"evidenceClass":"publisher_feed",
+		"facts":[{"claim":"正式发布","sourceUrl":"https://example.com/feed"}],
+		"whatChanged":"发布更新","audience":"开发者","practicalUse":"了解变化","action":"阅读原文",
+		"alertEligible":false,"alertCategory":"","alertReason":""
+	}`
+	client := &captureAIClient{content: base}
+	analyzer := NewAnalyzer(client, "deepseek-v4-pro")
+	_, err := analyzer.AnalyzeSignal(context.Background(),
+		SignalInput{OriginalTitle: "Update", OriginalURL: "https://example.com/post", Topics: []string{"AI"}},
+		EvidenceInput{SourceURL: "https://example.com/feed", EvidenceClass: "publisher_feed", Excerpt: "Released."},
+	)
+	if err == nil || !strings.Contains(err.Error(), "unknown topic") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestAnalyzeSignalAllowsExplicitSubscriptionWithoutTopicMatch(t *testing.T) {
+	client := &captureAIClient{content: `{
+		"matchedTopics":[],"valueScore":3,"evidenceClass":"original_documentation",
+		"facts":[{"claim":"发布 v2","sourceUrl":"https://github.com/acme/tool/releases/tag/v2"}],
+		"whatChanged":"发布 v2","audience":"订阅者","practicalUse":"评估升级","action":"阅读说明",
+		"alertEligible":false,"alertCategory":"","alertReason":""
+	}`}
+	analyzer := NewAnalyzer(client, "deepseek-v4-pro")
+	_, err := analyzer.AnalyzeSignal(context.Background(),
+		SignalInput{OriginalTitle: "v2", OriginalURL: "https://github.com/acme/tool/releases/tag/v2", Topics: []string{"机器人"}, AllowUnmatched: true},
+		EvidenceInput{SourceURL: "https://github.com/acme/tool/releases/tag/v2", EvidenceClass: "original_documentation", Excerpt: "Version 2."},
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

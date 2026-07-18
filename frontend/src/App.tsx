@@ -8,11 +8,14 @@ import {
   listSourceConfigs,
   login,
   logout,
+  updateGitHubRepositories,
+  updateRSSFeeds,
   updateRedditCommunities,
   updateSignalLifecycle,
   updateContentPackage,
   updateSourceConfig,
 } from './api/radar'
+import { createTopic, deleteTopic, listTopics, updateTopic, type Topic } from './api/keywords'
 import { LoginPage } from './pages/LoginPage'
 import { RadarDashboard } from './pages/RadarDashboard'
 import type { ContentPackage, RadarSignal, SourceConfig } from './types'
@@ -21,6 +24,7 @@ export function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
   const [signals, setSignals] = useState<RadarSignal[]>([])
   const [sources, setSources] = useState<SourceConfig[]>([])
+  const [topics, setTopics] = useState<Topic[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [contentPackage, setContentPackage] = useState<ContentPackage | null>(null)
@@ -29,9 +33,10 @@ export function App() {
     setLoading(true)
     setError('')
     try {
-      const [nextSignals, nextSources] = await Promise.all([listRadarSignals(), listSourceConfigs()])
+      const [nextSignals, nextSources, nextTopics] = await Promise.all([listRadarSignals(), listSourceConfigs(), listTopics()])
       setSignals(nextSignals)
       setSources(nextSources)
+      setTopics(nextTopics)
       setAuthenticated(true)
     } catch (cause) {
       if (cause instanceof APIError && cause.status === 401) {
@@ -85,6 +90,42 @@ export function App() {
     try {
       await updateRedditCommunities(communities)
       await loadDashboard()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  const saveSourceList = async (save: () => Promise<void>) => {
+    try {
+      await save()
+      await loadDashboard()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  const handleCreateTopic = async (word: string) => {
+    try {
+      const topic = await createTopic(word)
+      setTopics((current) => [...current, topic])
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  const handleToggleTopic = async (topic: Topic) => {
+    try {
+      const updated = await updateTopic(topic.id, !topic.active)
+      setTopics((current) => current.map((item) => item.id === updated.id ? updated : item))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  const handleDeleteTopic = async (id: number) => {
+    try {
+      await deleteTopic(id)
+      setTopics((current) => current.filter((topic) => topic.id !== id))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     }
@@ -148,12 +189,18 @@ export function App() {
     <RadarDashboard
       signals={signals}
       sources={sources}
+      topics={topics}
       loading={loading}
       error={error}
       onRefresh={loadDashboard}
       onLogout={handleLogout}
       onSourceChange={handleSourceChange}
       onRedditCommunitiesChange={handleRedditCommunitiesChange}
+      onGitHubRepositoriesChange={(repositories) => saveSourceList(() => updateGitHubRepositories(repositories))}
+      onRSSFeedsChange={(feeds) => saveSourceList(() => updateRSSFeeds(feeds))}
+      onCreateTopic={handleCreateTopic}
+      onToggleTopic={handleToggleTopic}
+      onDeleteTopic={handleDeleteTopic}
       onLifecycleChange={handleLifecycleChange}
       contentPackage={contentPackage}
       onGenerateContent={handleGenerateContent}

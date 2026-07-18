@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"trend-graph/internal/radar"
 	"trend-graph/internal/store"
 )
 
@@ -38,6 +39,7 @@ type radarSignalResponse struct {
 	OriginalURL         string                 `json:"originalUrl"`
 	Author              string                 `json:"author,omitempty"`
 	Score               float64                `json:"score"`
+	RankScore           int                    `json:"rankScore"`
 	Qualification       string                 `json:"qualification"`
 	QualificationReason string                 `json:"qualificationReason,omitempty"`
 	LifecycleState      string                 `json:"lifecycleState"`
@@ -61,13 +63,21 @@ type radarEvidenceResponse struct {
 
 func (h *RadarHandler) ListSignals(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	items, err := h.signals.ListRadarSignals(limit)
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	items, err := h.signals.ListRadarSignals(100)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list radar signals"})
 		return
 	}
-	response := make([]radarSignalResponse, 0, len(items))
-	for _, item := range items {
+	ranked := radar.RankSignals(items, time.Now())
+	if len(ranked) > limit {
+		ranked = ranked[:limit]
+	}
+	response := make([]radarSignalResponse, 0, len(ranked))
+	for _, rankedItem := range ranked {
+		item := rankedItem.Item
 		view := radarSignalResponse{
 			ID:                  item.Signal.ID,
 			Source:              item.Signal.Source,
@@ -75,6 +85,7 @@ func (h *RadarHandler) ListSignals(c *gin.Context) {
 			OriginalURL:         item.Signal.OriginalURL,
 			Author:              item.Signal.Author,
 			Score:               item.Signal.Score,
+			RankScore:           rankedItem.RankScore,
 			Qualification:       item.Signal.Qualification,
 			QualificationReason: item.Signal.QualificationReason,
 			LifecycleState:      item.Signal.LifecycleState,
@@ -111,7 +122,7 @@ func (h *RadarHandler) UpdateLifecycle(c *gin.Context) {
 		State string `json:"state"`
 	}
 	if c.ShouldBindJSON(&request) != nil || !validLifecycleState(request.State) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "state must be new, queued, practiced, or dismissed"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "state must be inbox, saved, done, or dismissed"})
 		return
 	}
 	if err := h.signals.UpdateLifecycleState(id, request.State); errors.Is(err, gorm.ErrRecordNotFound) {
@@ -126,7 +137,7 @@ func (h *RadarHandler) UpdateLifecycle(c *gin.Context) {
 
 func validLifecycleState(state string) bool {
 	switch state {
-	case "new", "queued", "practiced", "dismissed":
+	case store.LifecycleInbox, store.LifecycleSaved, store.LifecycleDone, store.LifecycleDismissed:
 		return true
 	default:
 		return false

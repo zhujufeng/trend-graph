@@ -20,12 +20,17 @@ type collectionStore interface {
 	RecordCollectionRun(store.CollectionRun) error
 }
 
+type collectionTopicStore interface {
+	List(activeOnly bool) ([]store.Keyword, error)
+}
+
 type commandFunc func(context.Context, string, []string, ...string) ([]byte, error)
 
 // CollectionRunner lets Go own scheduling and audit state while Python owns
 // source-specific collection and ingestion.
 type CollectionRunner struct {
 	store        collectionStore
+	topics       collectionTopicStore
 	collectorDir string
 	backendURL   string
 	secret       string
@@ -34,9 +39,10 @@ type CollectionRunner struct {
 	runMu sync.Mutex
 }
 
-func NewCollectionRunner(repo collectionStore, collectorDir, backendURL, secret string) *CollectionRunner {
+func NewCollectionRunner(repo collectionStore, topics collectionTopicStore, collectorDir, backendURL, secret string) *CollectionRunner {
 	runner := &CollectionRunner{
 		store:        repo,
+		topics:       topics,
 		collectorDir: collectorDir,
 		backendURL:   backendURL,
 		secret:       secret,
@@ -55,22 +61,35 @@ func (r *CollectionRunner) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list source configs: %w", err)
 	}
+	topicRows, err := r.topics.List(true)
+	if err != nil {
+		return fmt.Errorf("list active topics: %w", err)
+	}
+	topics := make([]string, 0, len(topicRows))
+	for _, topic := range topicRows {
+		if word := strings.TrimSpace(topic.Word); word != "" {
+			topics = append(topics, word)
+		}
+	}
 
 	var runErrors []error
 	for _, config := range configs {
 		if !config.Enabled {
 			continue
 		}
-		if err := r.runSource(ctx, config); err != nil {
+		if err := r.runSource(ctx, config, topics); err != nil {
 			runErrors = append(runErrors, err)
 		}
 	}
 	return errors.Join(runErrors...)
 }
 
-func (r *CollectionRunner) runSource(ctx context.Context, config store.SourceConfig) error {
+func (r *CollectionRunner) runSource(ctx context.Context, config store.SourceConfig, topics []string) error {
 	started := time.Now().UTC()
-	args, err := collectorArgs(config)
+	args, skip, err := collectorArgs(config, topics)
+	if skip {
+		return nil
+	}
 	var output []byte
 	if err == nil {
 		output, err = r.runCommand(ctx, r.collectorDir, []string{
@@ -116,33 +135,71 @@ func (r *CollectionRunner) runSource(ctx context.Context, config store.SourceCon
 	return nil
 }
 
-func collectorArgs(config store.SourceConfig) ([]string, error) {
+func collectorArgs(config store.SourceConfig, topics []string) ([]string, bool, error) {
 	args := []string{
 		"run", "--no-sync", "python", "-m", "signal_collector.cli",
 		"--source", config.Source,
 		"--limit", "20",
 		"--ingest",
 	}
+	query := strings.Join(topics, ",")
+	if query != "" {
+		args = append(args, "--topics", query)
+	}
 	switch config.Source {
-	case types.SourceDEV:
-		args = append(args, "--query", "mcp,claudecode,agents,ai")
+	case types.SourceDEV, types.SourceBluesky:
+		if query == "" {
+			return nil, true, nil
+		}
+		args = append(args, "--query", query)
 	case types.SourceGitHub:
-		args = append(args, "--query", "agent skill mcp")
-	case types.SourceBluesky:
-		args = append(args, "--query", "MCP,Claude Code,Agent Skills,Codex")
+		var settings struct {
+			Repositories []string `json:"repositories"`
+		}
+		if err := json.Unmarshal([]byte(config.SettingsJSON), &settings); err != nil {
+			return nil, false, fmt.Errorf("decode github settings: %w", err)
+		}
+		if query != "" {
+			args = append(args, "--query", query)
+		}
+		if len(settings.Repositories) > 0 {
+			args = append(args, "--repositories", strings.Join(settings.Repositories, ","))
+		}
+		if query == "" && len(settings.Repositories) == 0 {
+			return nil, true, nil
+		}
 	case types.SourceReddit:
+		if query == "" {
+			return nil, true, nil
+		}
 		var settings struct {
 			Communities []string `json:"communities"`
 		}
 		if err := json.Unmarshal([]byte(config.SettingsJSON), &settings); err != nil {
-			return nil, fmt.Errorf("decode reddit settings: %w", err)
+			return nil, false, fmt.Errorf("decode reddit settings: %w", err)
 		}
 		if len(settings.Communities) == 0 {
-			return nil, errors.New("reddit communities are empty")
+			return nil, false, errors.New("reddit communities are empty")
 		}
 		args = append(args, "--communities", strings.Join(settings.Communities, ","))
+	case types.SourceRSS:
+		if query == "" {
+			return nil, true, nil
+		}
+		var settings struct {
+			Feeds []string `json:"feeds"`
+		}
+		if err := json.Unmarshal([]byte(config.SettingsJSON), &settings); err != nil {
+			return nil, false, fmt.Errorf("decode rss settings: %w", err)
+		}
+		if len(settings.Feeds) == 0 {
+			return nil, false, errors.New("rss feeds are empty")
+		}
+		args = append(args, "--feeds", strings.Join(settings.Feeds, ","))
+	default:
+		return nil, false, fmt.Errorf("unsupported source %q", config.Source)
 	}
-	return args, nil
+	return args, false, nil
 }
 
 func (r *CollectionRunner) execCommand(ctx context.Context, dir string, env []string, args ...string) ([]byte, error) {

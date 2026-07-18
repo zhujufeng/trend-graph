@@ -55,6 +55,9 @@ func main() {
 	// 7. 装配 repo
 	hotRepo := store.NewHotItemRepo(db)
 	keywordRepo := store.NewKeywordRepo(db)
+	if err := keywordRepo.EnsureDefault(); err != nil {
+		log.Fatalf("初始化关注主题失败: %v", err)
+	}
 	graphRepo := store.NewGraphRepo(db) // 阶段 8 新增
 	signalRepo := store.NewSignalRepo(db)
 	sourceConfigRepo := store.NewSourceConfigRepo(db)
@@ -103,7 +106,7 @@ func main() {
 
 	var analysisRunner *radar.AnalysisRunner
 	if an != nil {
-		analysisRunner = radar.NewAnalysisRunner(signalRepo, an, cfg.DeepSeekModel)
+		analysisRunner = radar.NewAnalysisRunner(signalRepo, keywordRepo, an, cfg.DeepSeekModel)
 	}
 	var deliveryService *radar.DeliveryService
 	if feishuNotifier != nil {
@@ -131,6 +134,7 @@ func main() {
 	if cfg.BackgroundJobsEnabled && cfg.InternalIngestSecret != "" {
 		collectionRunner = radar.NewCollectionRunner(
 			sourceConfigRepo,
+			keywordRepo,
 			cfg.CollectorDir,
 			"http://127.0.0.1:"+cfg.Port,
 			cfg.InternalIngestSecret,

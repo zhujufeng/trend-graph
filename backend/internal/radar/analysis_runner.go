@@ -24,9 +24,10 @@ type signalAnalyzer interface {
 }
 
 type AnalysisRunner struct {
-	store analysisStore
-	model signalAnalyzer
-	name  string
+	store  analysisStore
+	topics collectionTopicStore
+	model  signalAnalyzer
+	name   string
 }
 
 type AnalysisRunResult struct {
@@ -35,12 +36,15 @@ type AnalysisRunResult struct {
 	QuotaRemaining int
 }
 
-func NewAnalysisRunner(store analysisStore, model signalAnalyzer, modelName string) *AnalysisRunner {
-	return &AnalysisRunner{store: store, model: model, name: modelName}
+func NewAnalysisRunner(store analysisStore, topics collectionTopicStore, model signalAnalyzer, modelName string) *AnalysisRunner {
+	return &AnalysisRunner{store: store, topics: topics, model: model, name: modelName}
 }
 
 func (r *AnalysisRunner) Run(ctx context.Context, now time.Time) (AnalysisRunResult, error) {
 	_, start, err := shanghaiDay(now)
+	if err != nil {
+		return AnalysisRunResult{}, err
+	}
 	used, err := r.store.CountAnalysesSince(start)
 	if err != nil {
 		return AnalysisRunResult{}, err
@@ -48,6 +52,14 @@ func (r *AnalysisRunner) Run(ctx context.Context, now time.Time) (AnalysisRunRes
 	remaining := dailyAnalysisQuota - used
 	if remaining <= 0 {
 		return AnalysisRunResult{QuotaRemaining: 0}, nil
+	}
+	keywords, err := r.topics.List(true)
+	if err != nil {
+		return AnalysisRunResult{}, err
+	}
+	topics := make([]string, 0, len(keywords))
+	for _, keyword := range keywords {
+		topics = append(topics, keyword.Word)
 	}
 	items, err := r.store.ListPendingSignals(remaining)
 	if err != nil {
@@ -62,7 +74,7 @@ func (r *AnalysisRunner) Run(ctx context.Context, now time.Time) (AnalysisRunRes
 			result.Rejected++
 			continue
 		}
-		decision := Qualify(item.Signal, *item.Evidence, now)
+		decision := Qualify(item.Signal, *item.Evidence, topics, now)
 		if !decision.Eligible {
 			if err := r.store.SetQualification(item.Signal.ID, "rejected", decision.Reason); err != nil {
 				return result, err
@@ -71,7 +83,7 @@ func (r *AnalysisRunner) Run(ctx context.Context, now time.Time) (AnalysisRunRes
 			continue
 		}
 		output, err := r.model.AnalyzeSignal(ctx,
-			analyzer.SignalInput{Source: item.Signal.Source, OriginalTitle: item.Signal.OriginalTitle, OriginalURL: item.Signal.OriginalURL},
+			analyzer.SignalInput{Source: item.Signal.Source, OriginalTitle: item.Signal.OriginalTitle, OriginalURL: item.Signal.OriginalURL, Topics: topics, AllowUnmatched: len(decision.MatchedTopics) == 0},
 			analyzer.EvidenceInput{SourceURL: item.Evidence.SourceURL, EvidenceClass: item.Evidence.EvidenceClass, Excerpt: item.Evidence.Excerpt},
 		)
 		if err != nil {

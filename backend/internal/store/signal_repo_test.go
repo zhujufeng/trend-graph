@@ -26,7 +26,8 @@ func TestActiveRadarSignalsFiltersRetiredSources(t *testing.T) {
 		t.Fatalf("query = %q", statement.SQL.String())
 	}
 	if !reflect.DeepEqual(statement.Vars, []any{
-		types.SourceDEV, types.SourceGitHub, types.SourceReddit, types.SourceBluesky,
+		types.SourceDEV, types.SourceGitHub, types.SourceReddit, types.SourceBluesky, types.SourceRSS,
+		LifecycleDismissed,
 	}) {
 		t.Fatalf("query vars = %#v", statement.Vars)
 	}
